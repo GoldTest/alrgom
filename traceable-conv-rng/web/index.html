@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>可追溯卷积与池化伪随机数生成器 (Traceable Conv-Pool RNG)</title>
+  <!-- D3.js for Tree Graph Visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <!-- Chart.js for Randomness Analysis -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Tailwind CSS CDN for Modern Styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .node circle {
+      cursor: pointer;
+      stroke-width: 2px;
+      transition: all 0.2s ease;
+    }
+    .node text {
+      font-size: 11px;
+      font-family: monospace;
+      fill: #e6edf3;
+    }
+    .link {
+      fill: none;
+      stroke: #30363d;
+      stroke-opacity: 0.8;
+      stroke-width: 1.5px;
+    }
+    .link.highlight {
+      stroke: #58a6ff;
+      stroke-width: 2.5px;
+      stroke-opacity: 1;
+    }
+    .matrix-cell {
+      cursor: pointer;
+      transition: transform 0.15s ease, outline 0.15s ease;
+    }
+    .matrix-cell:hover {
+      transform: scale(1.15);
+      z-index: 10;
+      outline: 2px solid #58a6ff;
+    }
+    .matrix-cell.selected {
+      outline: 3px solid #f2994a !important;
+      box-shadow: 0 0 12px rgba(242, 153, 74, 0.8);
+      z-index: 20;
+    }
+    .matrix-cell.receptive-field {
+      outline: 2px dashed #2ea043;
+    }
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #161b22;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Navigation Bar -->
+  <header class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between shadow-lg">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
+        🎲
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-white tracking-wide">可追溯卷积-池化伪随机数生成器</h1>
+        <p class="text-xs text-gray-400">Traceable Conv-Pool Deterministic RNG System (Rust Powered)</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-300 border border-green-700">
+        <span class="w-2 h-2 mr-1.5 rounded-full bg-green-400 animate-pulse"></span> Rust Engine Ready
+      </span>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden">
+    
+    <!-- Left Sidebar: Controls & Layer Heatmaps (4 cols) -->
+    <div class="lg:col-span-5 flex flex-col space-y-6 overflow-y-auto max-h-[calc(100vh-100px)] pr-2">
+      
+      <!-- Control Panel -->
+      <div class="bg-gray-900 rounded-xl p-5 border border-gray-800 shadow-lg">
+        <h2 class="text-base font-semibold text-gray-200 mb-4 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+          参数配置 Controls
+        </h2>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">随机种子 (Seed u64)</label>
+            <div class="flex">
+              <input id="seedInput" type="number" value="12345678" class="w-full bg-gray-800 border border-gray-700 rounded-l-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono">
+              <button id="randomSeedBtn" title="随机生成种子" class="bg-gray-700 hover:bg-gray-600 border border-l-0 border-gray-700 px-3 py-2 rounded-r-lg text-sm text-gray-300">🎲</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">初始状态尺寸 (Size)</label>
+            <select id="sizeSelect" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono">
+              <option value="8">8 × 8 (输出 4×4)</option>
+              <option value="16" selected>16 × 16 (输出 8×8)</option>
+              <option value="24">24 × 24 (输出 12×12)</option>
+              <option value="32">32 × 32 (输出 16×16)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex space-x-3">
+          <button id="generateBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors shadow-md flex items-center justify-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            生成随机数矩阵
+          </button>
+        </div>
+      </div>
+
+      <!-- Feature Map Grid (4 Layers) -->
+      <div class="bg-gray-900 rounded-xl p-5 border border-gray-800 shadow-lg flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold text-gray-200 flex items-center">
+            <svg class="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+            网络特征层 (Feature Maps)
+          </h2>
+          <span class="text-xs text-gray-500">点击任意像素节点生成追溯树</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 flex-1">
+          <!-- Layer 0 Card -->
+          <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 flex flex-col">
+            <div class="text-xs font-semibold text-gray-400 mb-2 flex justify-between">
+              <span>L0: 种子扩展矩阵</span>
+              <span id="l0Dim" class="font-mono text-indigo-400">16x16</span>
+            </div>
+            <div id="l0Grid" class="flex-1 grid gap-0.5 min-h-[140px] items-center justify-center p-1 bg-gray-900/50 rounded"></div>
+          </div>
+
+          <!-- Layer 1 Card -->
+          <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 flex flex-col">
+            <div class="text-xs font-semibold text-gray-400 mb-2 flex justify-between">
+              <span>L1: 3x3 ARX 卷积层</span>
+              <span id="l1Dim" class="font-mono text-indigo-400">16x16</span>
+            </div>
+            <div id="l1Grid" class="flex-1 grid gap-0.5 min-h-[140px] items-center justify-center p-1 bg-gray-900/50 rounded"></div>
+          </div>
+
+          <!-- Layer 2 Card -->
+          <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 flex flex-col">
+            <div class="text-xs font-semibold text-gray-400 mb-2 flex justify-between">
+              <span>L2: 2x2 XOR 异或池化</span>
+              <span id="l2Dim" class="font-mono text-indigo-400">8x8</span>
+            </div>
+            <div id="l2Grid" class="flex-1 grid gap-0.5 min-h-[140px] items-center justify-center p-1 bg-gray-900/50 rounded"></div>
+          </div>
+
+          <!-- Layer 3 Card -->
+          <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 flex flex-col">
+            <div class="text-xs font-semibold text-gray-400 mb-2 flex justify-between">
+              <span>L3: 扩散层 (PRNG 输出)</span>
+              <span id="l3Dim" class="font-mono text-indigo-400">8x8</span>
+            </div>
+            <div id="l3Grid" class="flex-1 grid gap-0.5 min-h-[140px] items-center justify-center p-1 bg-gray-900/50 rounded"></div>
+          </div>
+        </div>
+
+        <!-- Node Inspector Bar -->
+        <div id="nodeInspector" class="mt-4 p-3 bg-gray-950 rounded-lg border border-gray-800 text-xs font-mono text-gray-300 min-h-[50px] flex items-center justify-between">
+          <span class="text-gray-500">将鼠标悬停在上方像素块上以查看数值与计算属性</span>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Right Area: Tree Diagram & Randomness Test Tabs (7 cols) -->
+    <div class="lg:col-span-7 flex flex-col space-y-6 overflow-hidden">
+      
+      <!-- Tab Header -->
+      <div class="bg-gray-900 rounded-xl p-2 border border-gray-800 shadow-lg flex items-center justify-between">
+        <div class="flex space-x-2">
+          <button id="tabTreeBtn" class="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white shadow-md transition-colors">
+            🌲 随机数追溯树状图 (Lineage Tree)
+          </button>
+          <button id="tabStatsBtn" class="px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+            📊 随机性统计分析 (NIST/Uniformity)
+          </button>
+          <button id="tabAlgoBtn" class="px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+            📖 算法原理 (Architecture)
+          </button>
+        </div>
+        <div class="text-xs text-gray-400 pr-3 font-mono" id="treeStatusText">
+          当前选中: L3[0,0]
+        </div>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="flex-1 bg-gray-900 rounded-xl border border-gray-800 shadow-lg relative flex flex-col overflow-hidden min-h-[500px]">
+        
+        <!-- Tab 1: Tree Graph View -->
+        <div id="tabTree" class="absolute inset-0 flex flex-col">
+          <div class="p-3 bg-gray-950/80 border-b border-gray-800 text-xs text-gray-400 flex items-center justify-between">
+            <span class="flex items-center">
+              <span class="w-2 h-2 rounded-full bg-indigo-500 mr-2"></span>
+              从选中的随机数节点向左/向顶层追溯至 Layer 0 原始种子分量
+            </span>
+            <div class="flex space-x-2">
+              <button id="zoomResetBtn" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-xs">重置缩放</button>
+            </div>
+          </div>
+          <div id="treeContainer" class="flex-1 w-full h-full overflow-hidden relative cursor-grab active:cursor-grabbing">
+            <!-- D3.js renders SVG tree inside this element -->
+          </div>
+        </div>
+
+        <!-- Tab 2: Stats Analysis View -->
+        <div id="tabStats" class="absolute inset-0 p-6 overflow-y-auto hidden flex flex-col space-y-6">
+          <div class="grid grid-cols-3 gap-4">
+            <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 text-center">
+              <div class="text-xs text-gray-400 mb-1">均值 (Mean)</div>
+              <div id="statMean" class="text-xl font-bold text-indigo-400 font-mono">0.5000</div>
+              <div class="text-[10px] text-gray-500">理论期望: 0.5000</div>
+            </div>
+            <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 text-center">
+              <div class="text-xs text-gray-400 mb-1">单位比特平衡 (Monobit Test)</div>
+              <div id="statMonobit" class="text-xl font-bold text-green-400 font-mono">50.1%</div>
+              <div class="text-[10px] text-gray-500">期望 1 比特比例: 50.0%</div>
+            </div>
+            <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 text-center">
+              <div class="text-xs text-gray-400 mb-1">卡方均匀性 (Chi-Square p-val)</div>
+              <div id="statChi2" class="text-xl font-bold text-indigo-400 font-mono">0.842</div>
+              <div class="text-[10px] text-gray-500">p > 0.01 视为通过</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-6 flex-1">
+            <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 flex flex-col">
+              <h3 class="text-sm font-semibold text-gray-300 mb-3">输出数据直方分布 (Uniformity Histogram)</h3>
+              <div class="flex-1 relative min-h-[220px]">
+                <canvas id="histogramChart"></canvas>
+              </div>
+            </div>
+            <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 flex flex-col">
+              <h3 class="text-sm font-semibold text-gray-300 mb-3">2D 随机过程伪色彩图 (2D Noise Rendering)</h3>
+              <div class="flex-1 flex items-center justify-center">
+                <canvas id="noiseCanvas" width="160" height="160" class="rounded shadow-md image-render-pixelated border border-gray-700"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Algorithm Explanation View -->
+        <div id="tabAlgo" class="absolute inset-0 p-6 overflow-y-auto hidden text-gray-300 space-y-4 text-sm leading-relaxed">
+          <h2 class="text-lg font-bold text-white border-b border-gray-800 pb-2">基于卷积与池化的可追溯 PRNG 核心架构</h2>
+          
+          <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 space-y-2">
+            <h3 class="text-indigo-400 font-semibold">1. 为什么卷积与池化可以实现确定性伪随机数？</h3>
+            <p>
+              传统 PRNG（如 Xorshift、LCG）多为标量串行递推。而基于 2D 矩阵前向传播的算法，只需确定**初始种子矩阵 $L_0$** 与 **卷积核参数 $K_1, K_2$**，即可在有限整数字长域（$\mathbb{Z}_{2^{32}}$）内完成严格可再现、可并发的确定性映射。
+            </p>
+          </div>
+
+          <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 space-y-2">
+            <h3 class="text-indigo-400 font-semibold">2. 核心网络层结构 (Pipeline Layers)</h3>
+            <ul class="list-disc list-inside space-y-1 text-gray-400">
+              <li><strong class="text-gray-200">Layer 0 (种子哈希扩展)</strong>: 使用 SplitMix64 散列函数将 64 位 Seed 扩展为 $N \times N$ 矩阵。</li>
+              <li><strong class="text-gray-200">Layer 1 (3x3 ARX 卷积)</strong>: 引入 **Add-Rotate-XOR (ARX)** 非线性代数特征核。通过循环移位与大素数乘法打破线性叠加，提供强雪崩效应。</li>
+              <li><strong class="text-gray-200">Layer 2 (2x2 XOR 异或池化)</strong>: 解决传统 Max Pooling（偏向最大值）或 Average Pooling（趋近正态分布）导致均匀性失真的问题。采用 $2 \times 2$ 步长下采样的位异或池化，完美保留均匀比特熵。</li>
+              <li><strong class="text-gray-200">Layer 3 (3x3 扩散卷积)</strong>: 进行第二次空间邻域非线性混合，消除周期性模式，生成最终伪随机数流。</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-950 p-4 rounded-lg border border-gray-800 space-y-2">
+            <h3 class="text-indigo-400 font-semibold">3. 可追溯性 (Traceability & Lineage Graph)</h3>
+            <p>
+              每个输出节点 $L_3[r,c]$ 的感受野（Receptive Field）在网络拓扑结构中是精确且确定可计数的。
+              算法支持通过有向无环图（DAG）逐级反向追踪该随机数受哪些卷积权重、感受野像素块影响，直至归因于种子矩阵 $L_0$ 中的原始比特。
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // Global Application State
+    let currentSeed = 12345678;
+    let currentSize = 16;
+    let layersData = [];
+    let selectedCell = { layer: 3, row: 0, col: 0 };
+    let histogramChartInstance = null;
+
+    // UI Elements
+    const seedInput = document.getElementById('seedInput');
+    const randomSeedBtn = document.getElementById('randomSeedBtn');
+    const sizeSelect = document.getElementById('sizeSelect');
+    const generateBtn = document.getElementById('generateBtn');
+
+    // Color maps for heatmaps
+    function valToColor(normVal) {
+      // Color gradient: Dark Blue (0.0) -> Cyan (0.33) -> Gold (0.66) -> Crimson/White (1.0)
+      const h = Math.floor((1 - normVal) * 240);
+      const l = 30 + Math.floor(normVal * 35);
+      return `hsl(${h}, 80%, ${l}%)`;
+    }
+
+    // Client-side fallback computation engine if running standalone
+    function computeRngClient(seed, size) {
+      function splitmix64(state) {
+        state.v = BigInt.asUintN(64, state.v + 0x9E3779B97F4A7C15n);
+        let z = state.v;
+        z = BigInt.asUintN(64, (z ^ (z >> 30n)) * 0xBF58476D1CE4E5B9n);
+        z = BigInt.asUintN(64, (z ^ (z >> 27n)) * 0x94D049BB133111EBn);
+        return Number((z ^ (z >> 31n)) & 0xFFFFFFFFn);
+      }
+
+      let smState = { v: BigInt(seed) };
+      let l0 = Array.from({length: size}, () => new Uint32Array(size));
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          l0[r][c] = splitmix64(smState);
+        }
+      }
+
+      const k1 = {
+        w: [[0x9E3779B9, 0x85EBCA6B, 0xC2B2AE35], [0x27D4EB2F, 0x165667B1, 0x9E3779B9], [0x85EBCA6B, 0xC2B2AE35, 0x27D4EB2F]],
+        s: [[7, 11, 13], [17, 19, 23], [5, 9, 15]]
+      };
+
+      let l1 = Array.from({length: size}, () => new Uint32Array(size));
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          let acc = 0x65D444C5;
+          for (let dr = 0; dr < 3; dr++) {
+            for (let dc = 0; dc < 3; dc++) {
+              let pr = (r + size + dr - 1) % size;
+              let pc = (c + size + dc - 1) % size;
+              let inVal = l0[pr][pc];
+              let w = k1.w[dr][dc];
+              let sh = k1.s[dr][dc];
+              let mul = Math.imul(inVal, w);
+              let rot = ((mul << sh) | (mul >>> (32 - sh))) >>> 0;
+              acc = (acc + rot) ^ (rot >>> 3);
+            }
+          }
+          l1[r][c] = acc >>> 0;
+        }
+      }
+
+      let pSize = size / 2;
+      let l2 = Array.from({length: pSize}, () => new Uint32Array(pSize));
+      for (let r = 0; r < pSize; r++) {
+        for (let c = 0; c < pSize; c++) {
+          let v00 = l1[2 * r][2 * c];
+          let v01 = l1[2 * r][2 * c + 1];
+          let v10 = l1[2 * r + 1][2 * c];
+          let v11 = l1[2 * r + 1][2 * c + 1];
+          let xorVal = v00 ^ v01 ^ v10 ^ v11;
+          let rot = ((xorVal << 13) | (xorVal >>> 19)) >>> 0;
+          l2[r][c] = (rot + 0x9E3779B9) >>> 0;
+        }
+      }
+
+      const k2 = {
+        w: [[0xD1B54A32, 0x6C078965, 0x159A55E5], [0xA4093822, 0x299F31D0, 0x8054B327], [0xCEE1A0BD, 0x1165A967, 0x7A9D8B1C]],
+        s: [[9, 13, 15], [11, 21, 25], [3, 17, 19]]
+      };
+
+      let l3 = Array.from({length: pSize}, () => new Uint32Array(pSize));
+      for (let r = 0; r < pSize; r++) {
+        for (let c = 0; c < pSize; c++) {
+          let acc = 0x27D4EB2F;
+          for (let dr = 0; dr < 3; dr++) {
+            for (let dc = 0; dc < 3; dc++) {
+              let pr = (r + pSize + dr - 1) % pSize;
+              let pc = (c + pSize + dc - 1) % pSize;
+              let inVal = l2[pr][pc];
+              let w = k2.w[dr][dc];
+              let sh = k2.s[dr][dc];
+              let xorW = (inVal ^ w) >>> 0;
+              let rot = ((xorW << sh) | (xorW >>> (32 - sh))) >>> 0;
+              acc = (Math.imul(acc, 31) + rot) >>> 0;
+            }
+          }
+          l3[r][c] = acc >>> 0;
+        }
+      }
+
+      return [
+        { name: "Layer 0: Seed Matrix", width: size, height: size, data: l0 },
+        { name: "Layer 1: ARX Convolution", width: size, height: size, data: l1 },
+        { name: "Layer 2: 2x2 XOR Pooling", width: pSize, height: pSize, data: l2 },
+        { name: "Layer 3: Output Diffusion", width: pSize, height: pSize, data: l3 },
+      ];
+    }
+
+    // Client-side tree builder
+    function getTraceTreeClient(layerIdx, row, col) {
+      const pSize = currentSize / 2;
+      const l0 = layersData[0].data;
+      const l1 = layersData[1].data;
+      const l2 = layersData[2].data;
+      const l3 = layersData[3].data;
+
+      if (layerIdx === 0) {
+        let r = row % currentSize, c = col % currentSize;
+        let val = l0[r][c];
+        return {
+          id: `L0_${r}_${c}`,
+          layer: 0,
+          layer_name: "Layer 0: Seed Matrix",
+          row: r, col: c,
+          value_hex: `0x${val.toString(16).padStart(8, '0').toUpperCase()}`,
+          value_dec: val,
+          value_norm: val / 4294967295.0,
+          op_type: "SplitMix64 Expansion",
+          op_detail: `Seed: ${currentSeed}, Offset (${r}, ${c})`,
+          children: []
+        };
+      } else if (layerIdx === 1) {
+        let r = row % currentSize, c = col % currentSize;
+        let val = l1[r][c];
+        let children = [];
+        for (let dr = 0; dr < 3; dr++) {
+          for (let dc = 0; dc < 3; dc++) {
+            let pr = (r + currentSize + dr - 1) % currentSize;
+            let pc = (c + currentSize + dc - 1) % currentSize;
+            let child = getTraceTreeClient(0, pr, pc);
+            child.op_detail = `Kernel K1[${dr},${dc}] ARX multiply-rotate`;
+            children.push(child);
+          }
+        }
+        return {
+          id: `L1_${r}_${c}`,
+          layer: 1,
+          layer_name: "Layer 1: 3x3 ARX Conv",
+          row: r, col: c,
+          value_hex: `0x${val.toString(16).padStart(8, '0').toUpperCase()}`,
+          value_dec: val,
+          value_norm: val / 4294967295.0,
+          op_type: "3x3 ARX Convolution",
+          op_detail: "acc = 0x65D444C5 + SUM((In * Weight) ROT Shift)",
+          children
+        };
+      } else if (layerIdx === 2) {
+        let r = row % pSize, c = col % pSize;
+        let val = l2[r][c];
+        let children = [
+          getTraceTreeClient(1, 2 * r, 2 * c),
+          getTraceTreeClient(1, 2 * r, 2 * c + 1),
+          getTraceTreeClient(1, 2 * r + 1, 2 * c),
+          getTraceTreeClient(1, 2 * r + 1, 2 * c + 1),
+        ];
+        return {
+          id: `L2_${r}_${c}`,
+          layer: 2,
+          layer_name: "Layer 2: 2x2 XOR Pool",
+          row: r, col: c,
+          value_hex: `0x${val.toString(16).padStart(8, '0').toUpperCase()}`,
+          value_dec: val,
+          value_norm: val / 4294967295.0,
+          op_type: "2x2 Bitwise XOR Pool",
+          op_detail: "(L1[2r,2c] ^ L1[2r,2c+1] ^ L1[2r+1,2c] ^ L1[2r+1,2c+1]) ROT 13 + const",
+          children
+        };
+      } else {
+        let r = row % pSize, c = col % pSize;
+        let val = l3[r][c];
+        let children = [];
+        for (let dr = 0; dr < 3; dr++) {
+          for (let dc = 0; dc < 3; dc++) {
+            let pr = (r + pSize + dr - 1) % pSize;
+            let pc = (c + pSize + dc - 1) % pSize;
+            let child = getTraceTreeClient(2, pr, pc);
+            child.op_detail = `Kernel K2[${dr},${dc}] Diffusion Step`;
+            children.push(child);
+          }
+        }
+        return {
+          id: `L3_${r}_${c}`,
+          layer: 3,
+          layer_name: "Layer 3: PRNG Output",
+          row: r, col: c,
+          value_hex: `0x${val.toString(16).padStart(8, '0').toUpperCase()}`,
+          value_dec: val,
+          value_norm: val / 4294967295.0,
+          op_type: "3x3 Diffusion Conv",
+          op_detail: "acc = acc * 31 + ((In ^ Weight) ROT Shift)",
+          children
+        };
+      }
+    }
+
+    // Fetch data from Rust API or fallback
+    async function loadPipelineData() {
+      currentSeed = parseInt(seedInput.value) || 12345678;
+      currentSize = parseInt(sizeSelect.value) || 16;
+
+      try {
+        const resp = await fetch(`/api/generate?seed=${currentSeed}&size=${currentSize}`);
+        if (resp.ok) {
+          layersData = await resp.json();
+        } else {
+          layersData = computeRngClient(currentSeed, currentSize);
+        }
+      } catch (err) {
+        layersData = computeRngClient(currentSeed, currentSize);
+      }
+
+      renderHeatmaps();
+      updateTraceTree(selectedCell.layer, selectedCell.row, selectedCell.col);
+      renderStats();
+    }
+
+    // Render 4 Feature Map Heatmaps
+    function renderHeatmaps() {
+      document.getElementById('l0Dim').innerText = `${currentSize}x${currentSize}`;
+      document.getElementById('l1Dim').innerText = `${currentSize}x${currentSize}`;
+      document.getElementById('l2Dim').innerText = `${currentSize/2}x${currentSize/2}`;
+      document.getElementById('l3Dim').innerText = `${currentSize/2}x${currentSize/2}`;
+
+      for (let lIdx = 0; lIdx < 4; lIdx++) {
+        const grid = document.getElementById(`l${lIdx}Grid`);
+        grid.innerHTML = '';
+        const layer = layersData[lIdx];
+        const w = layer.width;
+        const h = layer.height;
+
+        grid.style.gridTemplateColumns = `repeat(${w}, minmax(0, 1fr))`;
+
+        for (let r = 0; r < h; r++) {
+          for (let c = 0; c < w; c++) {
+            const val = layer.data[r][c];
+            const norm = val / 4294967295.0;
+            const cell = document.createElement('div');
+            cell.className = `matrix-cell w-full aspect-square rounded-[2px] transition-all`;
+            cell.style.backgroundColor = valToColor(norm);
+            cell.dataset.layer = lIdx;
+            cell.dataset.row = r;
+            cell.dataset.col = c;
+            cell.dataset.val = val;
+            cell.dataset.norm = norm;
+
+            if (selectedCell.layer === lIdx && selectedCell.row === r && selectedCell.col === c) {
+              cell.classList.add('selected');
+            }
+
+            cell.addEventListener('mouseenter', () => {
+              const hex = `0x${val.toString(16).padStart(8, '0').toUpperCase()}`;
+              document.getElementById('nodeInspector').innerHTML = `
+                <div><span class="text-indigo-400 font-bold">Layer ${lIdx} [${r}, ${c}]</span>: <span class="text-amber-300 font-bold">${hex}</span> (${val})</div>
+                <div class="text-gray-400">Normalized: <span class="text-emerald-400 font-bold">${norm.toFixed(6)}</span></div>
+              `;
+            });
+
+            cell.addEventListener('click', () => {
+              document.querySelectorAll('.matrix-cell').forEach(el => el.classList.remove('selected'));
+              cell.classList.add('selected');
+              selectedCell = { layer: lIdx, row: r, col: c };
+              updateTraceTree(lIdx, r, c);
+            });
+
+            grid.appendChild(cell);
+          }
+        }
+      }
+    }
+
+    // Render D3.js Lineage Tree Graph
+    async function updateTraceTree(layerIdx, row, col) {
+      let treeData = null;
+      document.getElementById('treeStatusText').innerText = `当前选中: L${layerIdx}[${row},${col}]`;
+
+      try {
+        const resp = await fetch(`/api/trace?seed=${currentSeed}&size=${currentSize}&layer=${layerIdx}&row=${row}&col=${col}`);
+        if (resp.ok) {
+          treeData = await resp.json();
+        } else {
+          treeData = getTraceTreeClient(layerIdx, row, col);
+        }
+      } catch (e) {
+        treeData = getTraceTreeClient(layerIdx, row, col);
+      }
+
+      renderD3Tree(treeData);
+    }
+
+    function renderD3Tree(data) {
+      const container = document.getElementById('treeContainer');
+      container.innerHTML = '';
+
+      const width = container.clientWidth || 700;
+      const height = container.clientHeight || 500;
+
+      const svg = d3.select(container)
+        .append('svg')
+        .attr('width', '100%')
+        .attr('height', '100%')
+        .attr('viewBox', [0, 0, width, height]);
+
+      const g = svg.append('g').attr('transform', `translate(80, ${height / 2})`);
+
+      // Add Zoom behavior
+      const zoom = d3.zoom()
+        .scaleExtent([0.3, 3])
+        .on('zoom', (event) => {
+          g.attr('transform', event.transform);
+        });
+
+      svg.call(zoom);
+
+      document.getElementById('zoomResetBtn').onclick = () => {
+        svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(80, height / 2));
+      };
+
+      const tree = d3.tree().nodeSize([36, 160]);
+      const root = d3.hierarchy(data);
+
+      tree(root);
+
+      // Links
+      g.append('g')
+        .selectAll('path')
+        .data(root.links())
+        .join('path')
+        .attr('class', 'link')
+        .attr('d', d3.linkHorizontal().x(d => d.y).y(d => d.x));
+
+      // Nodes
+      const node = g.append('g')
+        .selectAll('g')
+        .data(root.descendants())
+        .join('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${d.y},${d.x})`);
+
+      const layerColors = ['#e63946', '#f4a261', '#2a9d8f', '#457b9d'];
+
+      node.append('circle')
+        .attr('r', 8)
+        .attr('fill', d => layerColors[d.data.layer] || '#6c757d')
+        .attr('stroke', '#ffffff')
+        .on('click', (event, d) => {
+          alert(`节点详情:\n${d.data.layer_name}\n位置: [${d.data.row}, ${d.data.col}]\n数值: ${d.data.value_hex} (${d.data.value_dec})\n归约逻辑: ${d.data.op_detail}`);
+        });
+
+      node.append('text')
+        .attr('dy', '0.31em')
+        .attr('x', d => d.children ? -12 : 12)
+        .attr('text-anchor', d => d.children ? 'end' : 'start')
+        .text(d => `L${d.data.layer}[${d.data.row},${d.data.col}] = ${d.data.value_hex}`);
+
+      node.append('title')
+        .text(d => `${d.data.layer_name}\n${d.data.op_type}\n${d.data.op_detail}`);
+    }
+
+    // Render Statistical Analysis (Histogram & Noise)
+    function renderStats() {
+      const l3Data = layersData[3].data;
+      const flat = [];
+      let totalBitsOne = 0;
+      let totalBitsCount = 0;
+
+      for (let r = 0; r < l3Data.length; r++) {
+        for (let c = 0; c < l3Data[r].length; c++) {
+          const val = l3Data[r][c];
+          flat.push(val / 4294967295.0);
+
+          // Bit count
+          for (let i = 0; i < 32; i++) {
+            if ((val & (1 << i)) !== 0) totalBitsOne++;
+            totalBitsCount++;
+          }
+        }
+      }
+
+      // Mean
+      const sum = flat.reduce((a, b) => a + b, 0);
+      const mean = sum / flat.length;
+      document.getElementById('statMean').innerText = mean.toFixed(4);
+
+      // Monobit ratio
+      const ratio = (totalBitsOne / totalBitsCount) * 100;
+      document.getElementById('statMonobit').innerText = `${ratio.toFixed(1)}%`;
+
+      // Histogram bins (10 bins)
+      const bins = new Array(10).fill(0);
+      flat.forEach(v => {
+        const idx = Math.min(Math.floor(v * 10), 9);
+        bins[idx]++;
+      });
+
+      // Chi square calculation
+      const exp = flat.length / 10;
+      let chi2 = 0;
+      bins.forEach(obs => {
+        chi2 += Math.pow(obs - exp, 2) / exp;
+      });
+      // Rough p-value approximation for df=9
+      const pVal = Math.exp(-chi2 / 2.0);
+      document.getElementById('statChi2').innerText = pVal.toFixed(3);
+
+      // Render Chart.js Histogram
+      const ctx = document.getElementById('histogramChart').getContext('2d');
+      if (histogramChartInstance) {
+        histogramChartInstance.destroy();
+      }
+
+      histogramChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['0.0-0.1', '0.1-0.2', '0.2-0.3', '0.3-0.4', '0.4-0.5', '0.5-0.6', '0.6-0.7', '0.7-0.8', '0.8-0.9', '0.9-1.0'],
+          datasets: [{
+            label: '随机数数量',
+            data: bins,
+            backgroundColor: 'rgba(99, 102, 241, 0.7)',
+            borderColor: 'rgba(129, 140, 248, 1)',
+            borderWidth: 1,
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, grid: { color: '#1f2937' }, ticks: { color: '#9ca3af' } },
+            x: { grid: { color: '#1f2937' }, ticks: { color: '#9ca3af' } }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+
+      // Render 2D Noise Map Canvas
+      const noiseCanvas = document.getElementById('noiseCanvas');
+      const nCtx = noiseCanvas.getContext('2d');
+      const imgData = nCtx.createImageData(noiseCanvas.width, noiseCanvas.height);
+      const h = l3Data.length;
+      const w = l3Data[0].length;
+      const scaleX = noiseCanvas.width / w;
+      const scaleY = noiseCanvas.height / h;
+
+      for (let y = 0; y < noiseCanvas.height; y++) {
+        for (let x = 0; x < noiseCanvas.width; x++) {
+          const gridR = Math.floor(y / scaleY);
+          const gridC = Math.floor(x / scaleX);
+          const val = l3Data[gridR][gridC];
+          const byteVal = Math.floor((val / 4294967295.0) * 255);
+          const index = (y * noiseCanvas.width + x) * 4;
+          imgData.data[index] = byteVal;     // Red
+          imgData.data[index + 1] = byteVal; // Green
+          imgData.data[index + 2] = byteVal; // Blue
+          imgData.data[index + 3] = 255;     // Alpha
+        }
+      }
+      nCtx.putImageData(imgData, 0, 0);
+    }
+
+    // Tabs Switching Logic
+    const tabTreeBtn = document.getElementById('tabTreeBtn');
+    const tabStatsBtn = document.getElementById('tabStatsBtn');
+    const tabAlgoBtn = document.getElementById('tabAlgoBtn');
+    const tabTree = document.getElementById('tabTree');
+    const tabStats = document.getElementById('tabStats');
+    const tabAlgo = document.getElementById('tabAlgo');
+
+    tabTreeBtn.addEventListener('click', () => {
+      tabTree.classList.remove('hidden');
+      tabStats.classList.add('hidden');
+      tabAlgo.classList.add('hidden');
+      tabTreeBtn.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white shadow-md transition-colors";
+      tabStatsBtn.className = "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors";
+      tabAlgoBtn.className = "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors";
+    });
+
+    tabStatsBtn.addEventListener('click', () => {
+      tabTree.classList.add('hidden');
+      tabStats.classList.remove('hidden');
+      tabAlgo.classList.add('hidden');
+      tabStatsBtn.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white shadow-md transition-colors";
+      tabTreeBtn.className = "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors";
+      tabAlgoBtn.className = "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors";
+    });
+
+    tabAlgoBtn.addEventListener('click', () => {
+      tabTree.classList.add('hidden');
+      tabStats.classList.add('hidden');
+      tabAlgo.classList.remove('hidden');
+      tabAlgoBtn.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white shadow-md transition-colors";
+      tabTreeBtn.className = "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors";
+      tabStatsBtn.className = "px-4 py-2 text-sm font-medium rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors";
+    });
+
+    // Event Listeners
+    generateBtn.addEventListener('click', loadPipelineData);
+    randomSeedBtn.addEventListener('click', () => {
+      seedInput.value = Math.floor(Math.random() * 100000000);
+      loadPipelineData();
+    });
+    sizeSelect.addEventListener('change', loadPipelineData);
+
+    // Initial Load
+    window.addEventListener('DOMContentLoaded', loadPipelineData);
+  </script>
+</body>
+</html>
