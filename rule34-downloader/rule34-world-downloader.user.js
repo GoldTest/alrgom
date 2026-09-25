@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Rule34.world 高级下载助手 (Rule34 World Downloader Pro)
 // @namespace    https://github.com/alrgom/rule34-downloader
-// @version      1.4.0
-// @description  为 rule34.world 提供列表网格与详情页一键下载、实时下载任务面板、Tag多页全量批量下载悬浮面板、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
+// @version      1.5.0
+// @description  为 rule34.world 提供列表网格与详情页一键下载、实时下载任务面板、Tag多页全量批量下载带实时明细列表、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
 // @author       Mavis & Assistant
 // @match        https://rule34.world/*
 // @match        https://*.rule34.world/*
@@ -234,9 +234,6 @@
       }
     }
 
-    /**
-     * 带超时与死锁保护的本地文件写入
-     */
     static async saveFileToHandle(dirHandle, subFolderPath, fileName, blobData, onProgress) {
       let currentDir = dirHandle;
       if (subFolderPath) {
@@ -251,7 +248,6 @@
 
       try {
         await writable.write(blobData);
-        // 为 close 增加 3.5 秒超时竞态，防止杀毒软件锁文件导致挂起
         await Promise.race([
           writable.close(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Writable close timeout')), 3500)),
@@ -640,14 +636,12 @@
         });
       }
 
-      // 全局防假死自愈心跳（每 4 秒巡检一次，自动清理超过 20 秒无更新的任务）
       setInterval(() => {
         const now = Date.now();
         for (const [postId, task] of this.activeDownloads.entries()) {
           if (task.lastActiveTime && now - task.lastActiveTime > 20000) {
             console.warn(`[${SCRIPT_NAME}] 检测到 Post #${postId} 长时间无响应，触发自动自愈`);
             if (task.progress >= 95) {
-              // 数据大致已经传输完毕，强制标记完成
               task.status = 'completed';
               task.progress = 100;
               StorageManager.markDownloaded(postId, {
@@ -759,6 +753,7 @@
               if (loaded) taskState.loaded = loaded;
               if (total) taskState.total = total;
               this.notifyStateChanged(postId);
+              if (options.onItemProgress) options.onItemProgress(prog);
             });
             downloadSuccess = true;
           } catch (fsErr) {
@@ -774,6 +769,7 @@
             if (loaded) taskState.loaded = loaded;
             if (total) taskState.total = total;
             this.notifyStateChanged(postId);
+            if (options.onItemProgress) options.onItemProgress(prog);
           });
         }
 
@@ -861,10 +857,9 @@
                 const percent = Math.floor((pe.loaded / pe.total) * 100);
                 onProgress(Math.min(99, percent), pe.loaded, pe.total);
 
-                // 99% 看门狗：如果数据字节已经全部传输完毕（loaded >= total），启动 2.5 秒自愈看门狗
                 if (pe.loaded >= pe.total && !watchdogTimer) {
                   watchdogTimer = setTimeout(() => {
-                    console.warn(`[${SCRIPT_NAME}] GM_xhr onload 触发超时，看门狗强制自愈存盘`);
+                    console.warn(`[${SCRIPT_NAME}] GM_xhr onload 超时，看门狗强制自愈`);
                     if (onProgress) onProgress(100, pe.total, pe.total);
                     safeResolve(new Blob([], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' }));
                   }, 2500);
@@ -930,7 +925,6 @@
                 const percent = Math.floor((progressObj.loaded / progressObj.total) * 100);
                 onProgress(Math.min(99, percent), progressObj.loaded, progressObj.total);
 
-                // 99% 看门狗：如果字节已全部接收但 onload 延迟，2 秒后主动判定完成
                 if (progressObj.loaded >= progressObj.total && !watchdogTimer) {
                   watchdogTimer = setTimeout(() => {
                     console.warn(`[${SCRIPT_NAME}] GM_download 满载看门狗自动推进完成`);
@@ -1032,7 +1026,7 @@
 
   /**
    * ==========================================
-   * 6. 批量下载任务调度器 (Batch Download Manager)
+   * 6. 批量下载任务调度器 (Batch Download Manager with Item Tracking)
    * ==========================================
    */
 
@@ -1042,17 +1036,21 @@
     static shouldStop = false;
 
     static queue = [];
+    static batchItems = []; // 保存当前批次的全量明细列表：[{ id, type, status, progress, filename, error }]
     static totalCount = 0;
     static completedCount = 0;
     static skippedCount = 0;
     static failedCount = 0;
     static currentTagName = '';
-    static currentProcessingPostId = null;
 
     static activeWorkers = 0;
     static concurrency = 3;
 
     static updateUiCallback = null;
+
+    static getBatchItems() {
+      return this.batchItems;
+    }
 
     static async startBatchDownload(tagName, options = {}, updateCallback = null) {
       if (this.isRunning) {
@@ -1067,10 +1065,10 @@
       this.updateUiCallback = updateCallback;
 
       this.queue = [];
+      this.batchItems = [];
       this.completedCount = 0;
       this.skippedCount = 0;
       this.failedCount = 0;
-      this.currentProcessingPostId = null;
 
       const settings = StorageManager.getSettings();
       this.concurrency = options.concurrency || settings.batchConcurrency || 3;
@@ -1111,12 +1109,25 @@
       const skipDownloaded = options.skipDownloaded !== undefined ? options.skipDownloaded : settings.batchSkipDownloaded;
       const downloadList = [];
 
-      for (const p of filteredPosts) {
+      // 初始化全量明细条目
+      this.batchItems = filteredPosts.map(p => {
         const isDownloaded = StorageManager.isDownloaded(p.id);
-        if (skipDownloaded && isDownloaded) {
-          this.skippedCount++;
-        } else {
-          downloadList.push(p);
+        const isSkipped = skipDownloaded && isDownloaded;
+        if (isSkipped) this.skippedCount++;
+
+        return {
+          id: p.id,
+          type: p.type === 1 ? 'video' : 'image',
+          status: isSkipped ? 'skipped' : 'pending',
+          progress: isSkipped ? 100 : 0,
+          filename: `post_${p.id}`,
+          error: null,
+        };
+      });
+
+      for (let i = 0; i < filteredPosts.length; i++) {
+        if (this.batchItems[i].status !== 'skipped') {
+          downloadList.push(filteredPosts[i]);
         }
       }
 
@@ -1141,7 +1152,6 @@
       await this.runWorkerQueue();
 
       this.isRunning = false;
-      this.currentProcessingPostId = null;
       this.notifyProgress({
         statusText: `🎉 批量下载完成！成功: ${this.completedCount}，跳过: ${this.skippedCount}，失败: ${this.failedCount}`,
         phase: 'finished',
@@ -1174,22 +1184,42 @@
         const post = this.queue.shift();
         if (!post) break;
 
+        const item = this.batchItems.find(it => it.id === post.id);
+        if (item) {
+          item.status = 'downloading';
+          item.progress = 0;
+        }
+
         this.activeWorkers++;
-        this.currentProcessingPostId = post.id;
         this.notifyProgress({
           phase: 'downloading',
           currentPostId: post.id,
-          statusText: `正在下载 Post #${post.id} (剩余待下载: ${this.queue.length})...`,
+          statusText: `正在下载 Post #${post.id} (队列剩余: ${this.queue.length})...`,
         });
 
         try {
           await DownloadController.startDownload(post.id, {
             silent: true,
             force: true,
+            onItemProgress: (prog) => {
+              if (item) {
+                item.progress = prog;
+                this.notifyProgress({ phase: 'downloading' });
+              }
+            }
           });
+
+          if (item) {
+            item.status = 'completed';
+            item.progress = 100;
+          }
           this.completedCount++;
         } catch (err) {
           console.error(`[${SCRIPT_NAME}] 批量下载 Post #${post.id} 失败:`, err);
+          if (item) {
+            item.status = 'failed';
+            item.error = err.message || '下载失败';
+          }
           this.failedCount++;
         } finally {
           this.activeWorkers--;
@@ -1230,7 +1260,7 @@
           activeWorkers: this.activeWorkers,
           isRunning: this.isRunning,
           isPaused: this.isPaused,
-          currentPostId: this.currentProcessingPostId,
+          batchItems: this.batchItems,
         }, extra));
       }
     }
@@ -1468,9 +1498,9 @@
       .r34-modal-dialog {
         background: #1e2020;
         color: #e2e2e2;
-        width: 90%;
-        max-width: 640px;
-        max-height: 88vh;
+        width: 92%;
+        max-width: 680px;
+        max-height: 90vh;
         border-radius: 14px;
         border: 1px solid rgba(226, 226, 226, 0.15);
         box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 16px rgba(114, 17, 153, 0.3);
@@ -1510,11 +1540,11 @@
         background: rgba(255, 255, 255, 0.1);
       }
       .r34-modal-body {
-        padding: 20px;
+        padding: 18px 20px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 14px;
       }
       .r34-form-group {
         display: flex;
@@ -1574,11 +1604,11 @@
       .r34-task-item {
         background: rgba(0, 0, 0, 0.35);
         border: 1px solid rgba(226, 226, 226, 0.12);
-        border-radius: 10px;
-        padding: 12px 14px;
+        border-radius: 8px;
+        padding: 10px 12px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
       }
       .r34-task-header {
         display: flex;
@@ -1592,13 +1622,15 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        overflow: hidden;
       }
       .r34-task-badge {
         font-size: 10px;
         font-weight: 700;
-        padding: 2px 6px;
+        padding: 2px 5px;
         border-radius: 4px;
         text-transform: uppercase;
+        flex-shrink: 0;
       }
       .r34-task-badge.video {
         background: rgba(233, 30, 99, 0.3);
@@ -1659,28 +1691,96 @@
         border-color: rgba(255, 255, 255, 0.15);
       }
 
-      /* 统计格 */
-      .r34-batch-stat-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
+      /* 批量明细列表区域 */
+      .r34-batch-list-box {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(235, 178, 255, 0.2);
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
         gap: 8px;
-        text-align: center;
       }
-      .r34-stat-card {
-        background: rgba(255, 255, 255, 0.05);
-        padding: 8px 4px;
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+      .r34-batch-tabs {
+        display: flex;
+        gap: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 8px;
       }
-      .r34-stat-card .val {
-        font-size: 16px;
-        font-weight: 700;
-        color: #ebb2ff;
-      }
-      .r34-stat-card .lbl {
+      .r34-batch-tab-btn {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: rgba(226, 226, 226, 0.7);
+        padding: 3px 10px;
+        border-radius: 6px;
         font-size: 11px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .r34-batch-tab-btn:hover {
+        color: #ffffff;
+        border-color: #ebb2ff;
+      }
+      .r34-batch-tab-btn.active {
+        background: rgba(114, 17, 153, 0.4);
+        border-color: #ebb2ff;
+        color: #ebb2ff;
+        font-weight: 700;
+      }
+      .r34-batch-items-container {
+        max-height: 220px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-right: 4px;
+      }
+      .r34-batch-item-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 12px;
+        transition: background 0.15s ease;
+      }
+      .r34-batch-item-row:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .r34-status-tag {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .r34-status-tag.downloading {
+        background: rgba(114, 17, 153, 0.4);
+        color: #ebb2ff;
+        border: 1px solid rgba(235, 178, 255, 0.3);
+      }
+      .r34-status-tag.completed {
+        background: rgba(0, 82, 51, 0.4);
+        color: #57de9e;
+        border: 1px solid rgba(87, 222, 158, 0.3);
+      }
+      .r34-status-tag.skipped {
+        background: rgba(255, 255, 255, 0.08);
         color: rgba(226, 226, 226, 0.6);
-        margin-top: 2px;
+      }
+      .r34-status-tag.pending {
+        background: rgba(251, 192, 45, 0.15);
+        color: #fbc02d;
+        border: 1px solid rgba(251, 192, 45, 0.3);
+      }
+      .r34-status-tag.failed {
+        background: rgba(147, 1, 0, 0.4);
+        color: #ffb4a8;
+        border: 1px solid rgba(255, 180, 168, 0.3);
       }
 
       .r34-checkbox-label {
@@ -1897,7 +1997,7 @@
                 <span class="material-icons" style="font-size:16px; color:#ebb2ff; animation: r34-spin 1.5s linear infinite;">sync</span>
                 <a href="/post/${t.postId}" target="_blank" style="color:#ebb2ff; font-weight:bold;">#${t.postId}</a>
                 <span class="r34-task-badge ${t.isVideo ? 'video' : 'image'}">${t.isVideo ? 'VIDEO' : 'IMAGE'}</span>
-                <span style="font-size:12px; color:rgba(226,226,226,0.7);">${escapeHtml(t.filename || '正在解析...')}</span>
+                <span style="font-size:12px; color:rgba(226,226,226,0.7); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(t.filename || '正在解析...')}</span>
               </div>
               <span style="font-size:13px; font-weight:700; color:#57de9e;">${statusLabel}</span>
             </div>
@@ -1932,12 +2032,13 @@
 
   /**
    * ==========================================
-   * 9. 批量下载面板 Modal (Batch Modal)
+   * 9. 批量下载面板 Modal (Batch Modal - 带实时明细列表)
    * ==========================================
    */
 
   class BatchDownloadModal {
     static overlay = null;
+    static currentFilter = 'all'; // 'all', 'downloading', 'completed', 'skipped', 'failed'
 
     static show(initialTag = '') {
       if (this.overlay) {
@@ -2012,7 +2113,7 @@
               </div>
             </div>
 
-            <!-- 实时进度展示盒 -->
+            <!-- 实时总进度与统计 -->
             <div class="r34-batch-progress-box" id="r34-batch-progress-panel">
               <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:500;">
                 <span id="r34-batch-status-text">准备就绪，点击下方按钮开始批量下载</span>
@@ -2037,6 +2138,23 @@
                 <div class="r34-stat-card">
                   <div class="val" id="r34-stat-fail" style="color:#ffb4a8;">0</div>
                   <div class="lbl">失败/错误</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 实时批量下载明细列表 -->
+            <div class="r34-batch-list-box">
+              <div class="r34-batch-tabs">
+                <button class="r34-batch-tab-btn active" data-filter="all">全部 (<span id="r34-tab-count-all">0</span>)</button>
+                <button class="r34-batch-tab-btn" data-filter="downloading">下载中 (<span id="r34-tab-count-downloading">0</span>)</button>
+                <button class="r34-batch-tab-btn" data-filter="completed">已完成 (<span id="r34-tab-count-completed">0</span>)</button>
+                <button class="r34-batch-tab-btn" data-filter="skipped">已跳过 (<span id="r34-tab-count-skipped">0</span>)</button>
+                <button class="r34-batch-tab-btn" data-filter="failed">失败 (<span id="r34-tab-count-failed">0</span>)</button>
+              </div>
+
+              <div class="r34-batch-items-container" id="r34-batch-items-list">
+                <div style="text-align:center; padding: 18px 0; color: rgba(226,226,226,0.4); font-size:12px;">
+                  点击“开始批量下载”后，此处将实时展示抓取到的每一篇作品下载进度与状态。
                 </div>
               </div>
             </div>
@@ -2081,12 +2199,22 @@
       const statSkip = this.overlay.querySelector('#r34-stat-skip');
       const statFail = this.overlay.querySelector('#r34-stat-fail');
 
+      // 标签切换
+      this.overlay.querySelectorAll('.r34-batch-tab-btn').forEach(tabBtn => {
+        tabBtn.onclick = () => {
+          this.overlay.querySelectorAll('.r34-batch-tab-btn').forEach(b => b.classList.remove('active'));
+          tabBtn.classList.add('active');
+          this.currentFilter = tabBtn.getAttribute('data-filter') || 'all';
+          this.renderBatchItemsList();
+        };
+      });
+
       if (BatchDownloadManager.isRunning) {
         startBtn.disabled = true;
         tagInput.disabled = true;
         pauseBtn.style.display = 'inline-flex';
         stopBtn.style.display = 'inline-flex';
-        BatchDownloadManager.notifyProgress();
+        this.renderBatchItemsList();
       }
 
       pauseBtn.onclick = () => {
@@ -2140,6 +2268,8 @@
             percentText.textContent = `${percent}%`;
           }
 
+          this.renderBatchItemsList();
+
           if (prog.phase === 'finished') {
             startBtn.disabled = false;
             tagInput.disabled = false;
@@ -2148,6 +2278,77 @@
           }
         });
       };
+    }
+
+    static renderBatchItemsList() {
+      if (!this.overlay) return;
+
+      const items = BatchDownloadManager.getBatchItems();
+      const listContainer = this.overlay.querySelector('#r34-batch-items-list');
+      if (!listContainer) return;
+
+      // 更新 Tab 计数器
+      const downloadingCount = items.filter(it => it.status === 'downloading').length;
+      const completedCount = items.filter(it => it.status === 'completed').length;
+      const skippedCount = items.filter(it => it.status === 'skipped').length;
+      const failedCount = items.filter(it => it.status === 'failed').length;
+
+      const tabAll = this.overlay.querySelector('#r34-tab-count-all');
+      const tabDl = this.overlay.querySelector('#r34-tab-count-downloading');
+      const tabComp = this.overlay.querySelector('#r34-tab-count-completed');
+      const tabSkip = this.overlay.querySelector('#r34-tab-count-skipped');
+      const tabFail = this.overlay.querySelector('#r34-tab-count-failed');
+
+      if (tabAll) tabAll.textContent = items.length;
+      if (tabDl) tabDl.textContent = downloadingCount;
+      if (tabComp) tabComp.textContent = completedCount;
+      if (tabSkip) tabSkip.textContent = skippedCount;
+      if (tabFail) tabFail.textContent = failedCount;
+
+      let displayItems = items;
+      if (this.currentFilter !== 'all') {
+        displayItems = items.filter(it => it.status === this.currentFilter);
+      }
+
+      if (displayItems.length === 0) {
+        listContainer.innerHTML = `
+          <div style="text-align:center; padding: 18px 0; color: rgba(226,226,226,0.4); font-size:12px;">
+            ${items.length === 0 ? '点击“开始批量下载”后，此处将实时展示作品明细。' : '当前筛选分类下无项目。'}
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = displayItems.map(item => {
+        let statusHtml = '';
+        if (item.status === 'downloading') {
+          statusHtml = `
+            <span class="r34-status-tag downloading">
+              <span class="material-icons" style="font-size:12px; animation: r34-spin 1.2s linear infinite;">sync</span>
+              下载中 ${item.progress || 0}%
+            </span>
+          `;
+        } else if (item.status === 'completed') {
+          statusHtml = `<span class="r34-status-tag completed"><span class="material-icons" style="font-size:12px;">check</span>已完成</span>`;
+        } else if (item.status === 'skipped') {
+          statusHtml = `<span class="r34-status-tag skipped">已跳过</span>`;
+        } else if (item.status === 'failed') {
+          statusHtml = `<span class="r34-status-tag failed" title="${escapeHtml(item.error || '失败')}">✕ 失败</span>`;
+        } else {
+          statusHtml = `<span class="r34-status-tag pending">⏳ 排队中</span>`;
+        }
+
+        return `
+          <div class="r34-batch-item-row">
+            <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+              <a href="/post/${item.id}" target="_blank" style="color:#ebb2ff; font-weight:700; text-decoration:none;">#${item.id}</a>
+              <span class="r34-task-badge ${item.type}">${item.type.toUpperCase()}</span>
+              <span style="color:rgba(226,226,226,0.7); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px;">${escapeHtml(item.filename || 'post_' + item.id)}</span>
+            </div>
+            <div>${statusHtml}</div>
+          </div>
+        `;
+      }).join('');
     }
   }
 
@@ -2736,7 +2937,7 @@
   function init() {
     DownloadController.init();
     UIController.init();
-    console.log(`[${SCRIPT_NAME}] v1.4.0 (99%看门狗防卡死版) 初始化就绪！`);
+    console.log(`[${SCRIPT_NAME}] v1.5.0 初始化就绪！`);
   }
 
   if (document.readyState === 'loading') {
