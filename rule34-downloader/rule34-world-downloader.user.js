@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Rule34.world 高级下载助手 (Rule34 World Downloader Pro)
 // @namespace    https://github.com/alrgom/rule34-downloader
-// @version      1.5.0
-// @description  为 rule34.world 提供列表网格与详情页一键下载、实时下载任务面板、Tag多页全量批量下载带实时明细列表、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
+// @version      1.6.0
+// @description  为 rule34.world 提供列表网格与详情页一键下载、极简单列表批量下载面板、实时下载任务面板、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
 // @author       Mavis & Assistant
 // @match        https://rule34.world/*
 // @match        https://*.rule34.world/*
@@ -1026,7 +1026,7 @@
 
   /**
    * ==========================================
-   * 6. 批量下载任务调度器 (Batch Download Manager with Item Tracking)
+   * 6. 批量下载任务调度器 (Batch Download Manager)
    * ==========================================
    */
 
@@ -1036,7 +1036,7 @@
     static shouldStop = false;
 
     static queue = [];
-    static batchItems = []; // 保存当前批次的全量明细列表：[{ id, type, status, progress, filename, error }]
+    static batchItems = [];
     static totalCount = 0;
     static completedCount = 0;
     static skippedCount = 0;
@@ -1074,7 +1074,7 @@
       this.concurrency = options.concurrency || settings.batchConcurrency || 3;
 
       this.notifyProgress({
-        statusText: `正在全量扫描 Tag #${tagName} 的全部多页作品...`,
+        statusText: `正在扫描 Tag #${tagName} 的全部作品...`,
         phase: 'scanning',
       });
 
@@ -1082,7 +1082,7 @@
         maxPages: options.maxPages || settings.batchMaxPages || 0,
       }, (scanProgress) => {
         this.notifyProgress({
-          statusText: `正在扫描第 ${scanProgress.page} 页 (已发现 ${scanProgress.loadedCount} 篇作品)...`,
+          statusText: `正在扫描第 ${scanProgress.page} 页 (已发现 ${scanProgress.loadedCount} 篇)...`,
           phase: 'scanning',
           scannedCount: scanProgress.loadedCount,
         });
@@ -1109,7 +1109,6 @@
       const skipDownloaded = options.skipDownloaded !== undefined ? options.skipDownloaded : settings.batchSkipDownloaded;
       const downloadList = [];
 
-      // 初始化全量明细条目
       this.batchItems = filteredPosts.map(p => {
         const isDownloaded = StorageManager.isDownloaded(p.id);
         const isSkipped = skipDownloaded && isDownloaded;
@@ -1135,14 +1134,14 @@
       this.totalCount = filteredPosts.length;
 
       this.notifyProgress({
-        statusText: `扫描完成！共发现 ${filteredPosts.length} 篇作品（待下载: ${downloadList.length}，已跳过: ${this.skippedCount}）`,
+        statusText: `扫描完成！共 ${filteredPosts.length} 篇（待下载: ${downloadList.length}，已跳过: ${this.skippedCount}）`,
         phase: 'downloading',
       });
 
       if (downloadList.length === 0) {
         this.isRunning = false;
         this.notifyProgress({
-          statusText: `所有作品已在之前下载完毕，无需重复下载！`,
+          statusText: `全部作品之前已下载完毕，无需重复下载！`,
           phase: 'finished',
         });
         showToast(`Tag #${tagName} 所有作品均已下载过`, 'info');
@@ -1153,7 +1152,7 @@
 
       this.isRunning = false;
       this.notifyProgress({
-        statusText: `🎉 批量下载完成！成功: ${this.completedCount}，跳过: ${this.skippedCount}，失败: ${this.failedCount}`,
+        statusText: `🎉 批量下载完成！`,
         phase: 'finished',
       });
 
@@ -1194,7 +1193,7 @@
         this.notifyProgress({
           phase: 'downloading',
           currentPostId: post.id,
-          statusText: `正在下载 Post #${post.id} (队列剩余: ${this.queue.length})...`,
+          statusText: `正在下载 Post #${post.id}...`,
         });
 
         try {
@@ -1498,9 +1497,9 @@
       .r34-modal-dialog {
         background: #1e2020;
         color: #e2e2e2;
-        width: 92%;
-        max-width: 680px;
-        max-height: 90vh;
+        width: 90%;
+        max-width: 620px;
+        max-height: 88vh;
         border-radius: 14px;
         border: 1px solid rgba(226, 226, 226, 0.15);
         box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 16px rgba(114, 17, 153, 0.3);
@@ -1540,7 +1539,7 @@
         background: rgba(255, 255, 255, 0.1);
       }
       .r34-modal-body {
-        padding: 18px 20px;
+        padding: 16px 20px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
@@ -1600,7 +1599,7 @@
         color: #ffffff;
       }
 
-      /* 任务列表条目 (Task item card) */
+      /* 任务条目 */
       .r34-task-item {
         background: rgba(0, 0, 0, 0.35);
         border: 1px solid rgba(226, 226, 226, 0.12);
@@ -1691,94 +1690,78 @@
         border-color: rgba(255, 255, 255, 0.15);
       }
 
-      /* 批量明细列表区域 */
-      .r34-batch-list-box {
-        background: rgba(0, 0, 0, 0.3);
+      /* 极简单列表 (Simplified Single List) */
+      .r34-simple-list-panel {
+        background: rgba(0, 0, 0, 0.35);
         border: 1px solid rgba(235, 178, 255, 0.2);
         border-radius: 10px;
-        padding: 10px 12px;
+        padding: 12px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
       }
-      .r34-batch-tabs {
+      .r34-simple-list-header {
         display: flex;
-        gap: 6px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        padding-bottom: 8px;
-      }
-      .r34-batch-tab-btn {
-        background: transparent;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        color: rgba(226, 226, 226, 0.7);
-        padding: 3px 10px;
-        border-radius: 6px;
-        font-size: 11px;
-        cursor: pointer;
-        transition: all 0.15s ease;
-      }
-      .r34-batch-tab-btn:hover {
-        color: #ffffff;
-        border-color: #ebb2ff;
-      }
-      .r34-batch-tab-btn.active {
-        background: rgba(114, 17, 153, 0.4);
-        border-color: #ebb2ff;
-        color: #ebb2ff;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
         font-weight: 700;
+        color: #ebb2ff;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       }
-      .r34-batch-items-container {
-        max-height: 220px;
+      .r34-simple-items-scroll {
+        max-height: 250px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
         gap: 6px;
         padding-right: 4px;
       }
-      .r34-batch-item-row {
+      .r34-simple-item-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 6px 10px;
+        padding: 8px 12px;
         background: rgba(255, 255, 255, 0.04);
         border-radius: 6px;
         border: 1px solid rgba(255, 255, 255, 0.06);
         font-size: 12px;
-        transition: background 0.15s ease;
       }
-      .r34-batch-item-row:hover {
-        background: rgba(255, 255, 255, 0.08);
+      .r34-simple-item-row:hover {
+        background: rgba(255, 255, 255, 0.07);
       }
-      .r34-status-tag {
+      .r34-simple-status-tag {
         font-size: 11px;
         font-weight: 700;
-        padding: 2px 6px;
+        padding: 2px 8px;
         border-radius: 4px;
         display: inline-flex;
         align-items: center;
         gap: 4px;
+        flex-shrink: 0;
       }
-      .r34-status-tag.downloading {
-        background: rgba(114, 17, 153, 0.4);
+      .r34-simple-status-tag.downloading {
+        background: rgba(114, 17, 153, 0.45);
         color: #ebb2ff;
         border: 1px solid rgba(235, 178, 255, 0.3);
       }
-      .r34-status-tag.completed {
-        background: rgba(0, 82, 51, 0.4);
+      .r34-simple-status-tag.completed {
+        background: rgba(0, 82, 51, 0.45);
         color: #57de9e;
         border: 1px solid rgba(87, 222, 158, 0.3);
       }
-      .r34-status-tag.skipped {
+      .r34-simple-status-tag.skipped {
         background: rgba(255, 255, 255, 0.08);
         color: rgba(226, 226, 226, 0.6);
       }
-      .r34-status-tag.pending {
+      .r34-simple-status-tag.pending {
         background: rgba(251, 192, 45, 0.15);
         color: #fbc02d;
         border: 1px solid rgba(251, 192, 45, 0.3);
       }
-      .r34-status-tag.failed {
-        background: rgba(147, 1, 0, 0.4);
+      .r34-simple-status-tag.failed {
+        background: rgba(147, 1, 0, 0.45);
         color: #ffb4a8;
         border: 1px solid rgba(255, 180, 168, 0.3);
       }
@@ -1929,7 +1912,6 @@
             <button class="r34-modal-close-btn" id="r34-tasks-close">✕</button>
           </div>
           <div class="r34-modal-body" id="r34-tasks-body">
-            <!-- 正在下载的活跃任务 -->
             <div style="font-size:14px; font-weight:700; color:#ebb2ff; display:flex; justify-content:space-between; align-items:center;">
               <span>🚀 正在下载中的任务</span>
               <span style="font-size:12px; font-weight:normal; color:rgba(226,226,226,0.6);">99% 看门狗自愈保护已开启</span>
@@ -1939,7 +1921,6 @@
               ${this.buildActiveTasksHtml(activeTasks)}
             </div>
 
-            <!-- 最近完成下载历史 -->
             <div style="font-size:14px; font-weight:700; color:#57de9e; margin-top:14px; display:flex; justify-content:space-between; align-items:center;">
               <span>✅ 最近下载历史 (前 15 项)</span>
               <span style="font-size:11px; font-weight:normal; color:rgba(226,226,226,0.6);">共记录 ${Object.keys(history).length} 篇</span>
@@ -2032,13 +2013,12 @@
 
   /**
    * ==========================================
-   * 9. 批量下载面板 Modal (Batch Modal - 带实时明细列表)
+   * 9. 极简单列表批量下载面板 Modal (Simplified Single List Batch Modal)
    * ==========================================
    */
 
   class BatchDownloadModal {
     static overlay = null;
-    static currentFilter = 'all'; // 'all', 'downloading', 'completed', 'skipped', 'failed'
 
     static show(initialTag = '') {
       if (this.overlay) {
@@ -2057,104 +2037,68 @@
           <div class="r34-modal-header">
             <h2>
               <span class="material-icons" style="font-size:20px; color:#ebb2ff;">layers</span>
-              Tag 全量多页批量下载
+              Tag 批量多页下载
             </h2>
             <button class="r34-modal-close-btn" id="r34-batch-close">✕</button>
           </div>
           <div class="r34-modal-body">
-            <!-- Tag 输入与配置 -->
-            <div class="r34-form-group">
-              <label>🏷️ 目标标签 (Tag 名称，如 rwt4184, overwatch, 2026 等)</label>
-              <input type="text" class="r34-input" id="r34-batch-tag-input" value="${escapeHtml(detectedTag)}" placeholder="输入要全量下载的 tag...">
-              <div class="hint">系统将自动翻页爬取该 Tag 下的全部作品并按队列并发下载。</div>
-            </div>
-
-            <!-- 批量过滤与并发参数 -->
+            <!-- Tag 输入与设置 -->
             <div class="r34-row">
               <div class="r34-form-group">
-                <label>🎞️ 媒体类型过滤</label>
+                <label>🏷️ 目标标签 (Tag)</label>
+                <input type="text" class="r34-input" id="r34-batch-tag-input" value="${escapeHtml(detectedTag)}" placeholder="输入 Tag...">
+              </div>
+
+              <div class="r34-form-group">
+                <label>🎞️ 媒体类型</label>
                 <select class="r34-select" id="r34-batch-media-filter">
-                  <option value="all">下载全部 (图片 + 视频)</option>
+                  <option value="all">全部 (图片 + 视频)</option>
                   <option value="video">仅下载视频 (MP4)</option>
                   <option value="image">仅下载图片 (JPG/AVIF)</option>
                 </select>
               </div>
-
-              <div class="r34-form-group">
-                <label>⚡ 下载并发数 (建议 3-4)</label>
-                <select class="r34-select" id="r34-batch-concurrency">
-                  <option value="1">1 (单线程温和)</option>
-                  <option value="2">2</option>
-                  <option value="3" selected>3 (推荐)</option>
-                  <option value="4">4 (极速)</option>
-                  <option value="6">6 (高并发)</option>
-                </select>
-              </div>
             </div>
 
             <div class="r34-row">
               <div class="r34-form-group">
-                <label>📄 最大扫描页数</label>
+                <label>📄 最大翻页数</label>
                 <select class="r34-select" id="r34-batch-max-pages">
-                  <option value="0" selected>全部页 (直至末页)</option>
-                  <option value="1">仅前 1 页 (约 30 篇)</option>
-                  <option value="3">前 3 页 (约 90 篇)</option>
-                  <option value="5">前 5 页 (约 150 篇)</option>
-                  <option value="10">前 10 页 (约 300 篇)</option>
-                  <option value="20">前 20 页 (约 600 篇)</option>
+                  <option value="0" selected>全部多页 (直至末页)</option>
+                  <option value="1">前 1 页</option>
+                  <option value="3">前 3 页</option>
+                  <option value="5">前 5 页</option>
+                  <option value="10">前 10 页</option>
                 </select>
               </div>
 
-              <div class="r34-form-group" style="justify-content: flex-end; padding-bottom: 4px;">
+              <div class="r34-form-group" style="justify-content: flex-end; padding-bottom: 6px;">
                 <label class="r34-checkbox-label">
                   <input type="checkbox" id="r34-batch-skip-downloaded" checked>
-                  <span>跳过历史已下载作品 (智能去重)</span>
+                  <span>跳过历史已下载</span>
                 </label>
               </div>
             </div>
 
-            <!-- 实时总进度与统计 -->
-            <div class="r34-batch-progress-box" id="r34-batch-progress-panel">
-              <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:500;">
-                <span id="r34-batch-status-text">准备就绪，点击下方按钮开始批量下载</span>
-                <span id="r34-batch-percent-text" style="color:#57de9e;">0%</span>
+            <!-- 总进度条 -->
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:500;">
+                <span id="r34-batch-status-text" style="color:rgba(226,226,226,0.8);">准备就绪</span>
+                <span id="r34-batch-percent-text" style="color:#57de9e; font-weight:700;">0%</span>
               </div>
               <div class="r34-progress-bar-bg">
                 <div class="r34-progress-bar-fill" id="r34-batch-progress-bar"></div>
               </div>
-              <div class="r34-batch-stat-grid">
-                <div class="r34-stat-card">
-                  <div class="val" id="r34-stat-total">0</div>
-                  <div class="lbl">发现总数</div>
-                </div>
-                <div class="r34-stat-card">
-                  <div class="val" id="r34-stat-success" style="color:#57de9e;">0</div>
-                  <div class="lbl">成功下载</div>
-                </div>
-                <div class="r34-stat-card">
-                  <div class="val" id="r34-stat-skip" style="color:#ebb2ff;">0</div>
-                  <div class="lbl">已跳过</div>
-                </div>
-                <div class="r34-stat-card">
-                  <div class="val" id="r34-stat-fail" style="color:#ffb4a8;">0</div>
-                  <div class="lbl">失败/错误</div>
-                </div>
-              </div>
             </div>
 
-            <!-- 实时批量下载明细列表 -->
-            <div class="r34-batch-list-box">
-              <div class="r34-batch-tabs">
-                <button class="r34-batch-tab-btn active" data-filter="all">全部 (<span id="r34-tab-count-all">0</span>)</button>
-                <button class="r34-batch-tab-btn" data-filter="downloading">下载中 (<span id="r34-tab-count-downloading">0</span>)</button>
-                <button class="r34-batch-tab-btn" data-filter="completed">已完成 (<span id="r34-tab-count-completed">0</span>)</button>
-                <button class="r34-batch-tab-btn" data-filter="skipped">已跳过 (<span id="r34-tab-count-skipped">0</span>)</button>
-                <button class="r34-batch-tab-btn" data-filter="failed">失败 (<span id="r34-tab-count-failed">0</span>)</button>
+            <!-- 极简单列表：下载列表 -->
+            <div class="r34-simple-list-panel">
+              <div class="r34-simple-list-header">
+                <span>📋 下载列表</span>
+                <span id="r34-simple-list-count" style="font-size:11px; font-weight:normal; color:rgba(226,226,226,0.6);">0 项</span>
               </div>
-
-              <div class="r34-batch-items-container" id="r34-batch-items-list">
-                <div style="text-align:center; padding: 18px 0; color: rgba(226,226,226,0.4); font-size:12px;">
-                  点击“开始批量下载”后，此处将实时展示抓取到的每一篇作品下载进度与状态。
+              <div class="r34-simple-items-scroll" id="r34-simple-items-container">
+                <div style="text-align:center; padding: 20px 0; color: rgba(226,226,226,0.4); font-size:12px;">
+                  点击下方“开始批量下载”后，此处将列出下载内容与实时状态。
                 </div>
               </div>
             </div>
@@ -2194,27 +2138,13 @@
       const statusText = this.overlay.querySelector('#r34-batch-status-text');
       const percentText = this.overlay.querySelector('#r34-batch-percent-text');
       const progressBar = this.overlay.querySelector('#r34-batch-progress-bar');
-      const statTotal = this.overlay.querySelector('#r34-stat-total');
-      const statSuccess = this.overlay.querySelector('#r34-stat-success');
-      const statSkip = this.overlay.querySelector('#r34-stat-skip');
-      const statFail = this.overlay.querySelector('#r34-stat-fail');
-
-      // 标签切换
-      this.overlay.querySelectorAll('.r34-batch-tab-btn').forEach(tabBtn => {
-        tabBtn.onclick = () => {
-          this.overlay.querySelectorAll('.r34-batch-tab-btn').forEach(b => b.classList.remove('active'));
-          tabBtn.classList.add('active');
-          this.currentFilter = tabBtn.getAttribute('data-filter') || 'all';
-          this.renderBatchItemsList();
-        };
-      });
 
       if (BatchDownloadManager.isRunning) {
         startBtn.disabled = true;
         tagInput.disabled = true;
         pauseBtn.style.display = 'inline-flex';
         stopBtn.style.display = 'inline-flex';
-        this.renderBatchItemsList();
+        this.renderSimpleItemsList();
       }
 
       pauseBtn.onclick = () => {
@@ -2246,7 +2176,7 @@
         stopBtn.style.display = 'inline-flex';
 
         const options = {
-          concurrency: parseInt(this.overlay.querySelector('#r34-batch-concurrency').value, 10) || 3,
+          concurrency: 3,
           maxPages: parseInt(this.overlay.querySelector('#r34-batch-max-pages').value, 10) || 0,
           filterMediaType: this.overlay.querySelector('#r34-batch-media-filter').value,
           skipDownloaded: this.overlay.querySelector('#r34-batch-skip-downloaded').checked,
@@ -2256,19 +2186,15 @@
           if (!this.overlay) return;
 
           if (prog.statusText) statusText.textContent = prog.statusText;
-          if (prog.totalCount !== undefined) statTotal.textContent = prog.totalCount;
-          if (prog.completedCount !== undefined) statSuccess.textContent = prog.completedCount;
-          if (prog.skippedCount !== undefined) statSkip.textContent = prog.skippedCount;
-          if (prog.failedCount !== undefined) statFail.textContent = prog.failedCount;
 
           if (prog.totalCount > 0) {
             const processed = (prog.completedCount || 0) + (prog.skippedCount || 0) + (prog.failedCount || 0);
             const percent = Math.min(100, Math.floor((processed / prog.totalCount) * 100));
             progressBar.style.width = `${percent}%`;
-            percentText.textContent = `${percent}%`;
+            percentText.textContent = `${percent}% (${processed}/${prog.totalCount})`;
           }
 
-          this.renderBatchItemsList();
+          this.renderSimpleItemsList();
 
           if (prog.phase === 'finished') {
             startBtn.disabled = false;
@@ -2280,66 +2206,46 @@
       };
     }
 
-    static renderBatchItemsList() {
+    static renderSimpleItemsList() {
       if (!this.overlay) return;
 
       const items = BatchDownloadManager.getBatchItems();
-      const listContainer = this.overlay.querySelector('#r34-batch-items-list');
+      const listContainer = this.overlay.querySelector('#r34-simple-items-container');
+      const countSpan = this.overlay.querySelector('#r34-simple-list-count');
       if (!listContainer) return;
 
-      // 更新 Tab 计数器
-      const downloadingCount = items.filter(it => it.status === 'downloading').length;
-      const completedCount = items.filter(it => it.status === 'completed').length;
-      const skippedCount = items.filter(it => it.status === 'skipped').length;
-      const failedCount = items.filter(it => it.status === 'failed').length;
+      if (countSpan) countSpan.textContent = `共 ${items.length} 项`;
 
-      const tabAll = this.overlay.querySelector('#r34-tab-count-all');
-      const tabDl = this.overlay.querySelector('#r34-tab-count-downloading');
-      const tabComp = this.overlay.querySelector('#r34-tab-count-completed');
-      const tabSkip = this.overlay.querySelector('#r34-tab-count-skipped');
-      const tabFail = this.overlay.querySelector('#r34-tab-count-failed');
-
-      if (tabAll) tabAll.textContent = items.length;
-      if (tabDl) tabDl.textContent = downloadingCount;
-      if (tabComp) tabComp.textContent = completedCount;
-      if (tabSkip) tabSkip.textContent = skippedCount;
-      if (tabFail) tabFail.textContent = failedCount;
-
-      let displayItems = items;
-      if (this.currentFilter !== 'all') {
-        displayItems = items.filter(it => it.status === this.currentFilter);
-      }
-
-      if (displayItems.length === 0) {
+      if (items.length === 0) {
         listContainer.innerHTML = `
-          <div style="text-align:center; padding: 18px 0; color: rgba(226,226,226,0.4); font-size:12px;">
-            ${items.length === 0 ? '点击“开始批量下载”后，此处将实时展示作品明细。' : '当前筛选分类下无项目。'}
+          <div style="text-align:center; padding: 20px 0; color: rgba(226,226,226,0.4); font-size:12px;">
+            点击下方“开始批量下载”后，此处将列出下载内容与实时状态。
           </div>
         `;
         return;
       }
 
-      listContainer.innerHTML = displayItems.map(item => {
+      listContainer.innerHTML = items.map(item => {
         let statusHtml = '';
         if (item.status === 'downloading') {
           statusHtml = `
-            <span class="r34-status-tag downloading">
+            <span class="r34-simple-status-tag downloading">
               <span class="material-icons" style="font-size:12px; animation: r34-spin 1.2s linear infinite;">sync</span>
               下载中 ${item.progress || 0}%
             </span>
           `;
         } else if (item.status === 'completed') {
-          statusHtml = `<span class="r34-status-tag completed"><span class="material-icons" style="font-size:12px;">check</span>已完成</span>`;
+          statusHtml = `<span class="r34-simple-status-tag completed"><span class="material-icons" style="font-size:12px;">check</span>已完成</span>`;
         } else if (item.status === 'skipped') {
-          statusHtml = `<span class="r34-status-tag skipped">已跳过</span>`;
+          statusHtml = `<span class="r34-simple-status-tag skipped">已跳过</span>`;
         } else if (item.status === 'failed') {
-          statusHtml = `<span class="r34-status-tag failed" title="${escapeHtml(item.error || '失败')}">✕ 失败</span>`;
+          statusHtml = `<span class="r34-simple-status-tag failed" title="${escapeHtml(item.error || '失败')}">✕ 失败</span>`;
         } else {
-          statusHtml = `<span class="r34-status-tag pending">⏳ 排队中</span>`;
+          statusHtml = `<span class="r34-simple-status-tag pending">⏳ 排队中</span>`;
         }
 
         return `
-          <div class="r34-batch-item-row">
+          <div class="r34-simple-item-row">
             <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
               <a href="/post/${item.id}" target="_blank" style="color:#ebb2ff; font-weight:700; text-decoration:none;">#${item.id}</a>
               <span class="r34-task-badge ${item.type}">${item.type.toUpperCase()}</span>
@@ -2937,7 +2843,7 @@
   function init() {
     DownloadController.init();
     UIController.init();
-    console.log(`[${SCRIPT_NAME}] v1.5.0 初始化就绪！`);
+    console.log(`[${SCRIPT_NAME}] v1.6.0 (极简单列表版) 初始化就绪！`);
   }
 
   if (document.readyState === 'loading') {
