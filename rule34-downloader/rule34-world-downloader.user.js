@@ -706,11 +706,23 @@
 
     static downloadViaNativeFs(target, dirHandle, onProgress) {
       return new Promise((resolve, reject) => {
+        const handleBlobSuccess = async (blob) => {
+          try {
+            await DirectoryPickerManager.saveFileToHandle(dirHandle, target.subFolder, target.filename, blob, onProgress);
+            resolve();
+          } catch (saveErr) {
+            reject(saveErr);
+          }
+        };
+
         if (typeof GM_xmlhttpRequest === 'function') {
           GM_xmlhttpRequest({
             method: 'GET',
             url: target.url,
             responseType: 'blob',
+            headers: {
+              'Referer': 'https://rule34.world/',
+            },
             onprogress: (pe) => {
               if (pe.total > 0 && onProgress) {
                 const percent = Math.floor((pe.loaded / pe.total) * 100);
@@ -719,13 +731,15 @@
             },
             onload: async (res) => {
               if (res.status >= 200 && res.status < 300) {
-                try {
-                  const blob = res.response;
-                  await DirectoryPickerManager.saveFileToHandle(dirHandle, target.subFolder, target.filename, blob, onProgress);
-                  resolve();
-                } catch (saveErr) {
-                  reject(saveErr);
+                let blob = res.response;
+                if (!(blob instanceof Blob)) {
+                  if (res.response instanceof ArrayBuffer) {
+                    blob = new Blob([res.response], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' });
+                  } else {
+                    blob = new Blob([res.responseText || ''], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' });
+                  }
                 }
+                await handleBlobSuccess(blob);
               } else {
                 reject(new Error(`HTTP ${res.status}`));
               }
@@ -739,8 +753,7 @@
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               return res.blob();
             })
-            .then(blob => DirectoryPickerManager.saveFileToHandle(dirHandle, target.subFolder, target.filename, blob, onProgress))
-            .then(resolve)
+            .then(blob => handleBlobSuccess(blob))
             .catch(reject);
         }
       });
@@ -753,6 +766,9 @@
             url: target.url,
             name: target.savePath,
             saveAs: false,
+            headers: {
+              'Referer': 'https://rule34.world/',
+            },
             onload: () => {
               if (onProgress) onProgress(100);
               resolve();
@@ -786,11 +802,33 @@
 
     static fallbackBlobDownload(target, onProgress) {
       return new Promise((resolve, reject) => {
+        const triggerDirectAnchor = (blobOrUrl) => {
+          const a = document.createElement('a');
+          if (typeof blobOrUrl === 'string') {
+            a.href = blobOrUrl;
+          } else {
+            a.href = URL.createObjectURL(blobOrUrl);
+          }
+          a.download = target.filename;
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            if (typeof blobOrUrl !== 'string') URL.revokeObjectURL(a.href);
+          }, 2000);
+          if (onProgress) onProgress(100);
+          resolve();
+        };
+
         if (typeof GM_xmlhttpRequest === 'function') {
           GM_xmlhttpRequest({
             method: 'GET',
             url: target.url,
             responseType: 'blob',
+            headers: {
+              'Referer': 'https://rule34.world/',
+            },
             onprogress: (pe) => {
               if (pe.total > 0 && onProgress) {
                 const percent = Math.floor((pe.loaded / pe.total) * 100);
@@ -799,47 +837,30 @@
             },
             onload: (res) => {
               if (res.status >= 200 && res.status < 300) {
-                const blob = res.response;
-                const blobUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = blobUrl;
-                a.download = target.filename;
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(blobUrl);
-                }, 1000);
-                if (onProgress) onProgress(100);
-                resolve();
+                let blob = res.response;
+                if (!(blob instanceof Blob)) {
+                  if (res.response instanceof ArrayBuffer) {
+                    blob = new Blob([res.response], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' });
+                  } else {
+                    blob = new Blob([res.responseText || ''], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' });
+                  }
+                }
+                triggerDirectAnchor(blob);
               } else {
-                reject(new Error(`HTTP ${res.status}`));
+                // HTTP 异常时尝试直接触发 URL 下载
+                triggerDirectAnchor(target.url);
               }
             },
-            onerror: () => reject(new Error('网络请求错误')),
-            ontimeout: () => reject(new Error('请求超时')),
+            onerror: () => {
+              // GM_xhr 出错时兜底直接拉起下载链接
+              triggerDirectAnchor(target.url);
+            },
+            ontimeout: () => {
+              triggerDirectAnchor(target.url);
+            },
           });
         } else {
-          fetch(target.url)
-            .then(res => {
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              return res.blob();
-            })
-            .then(blob => {
-              const blobUrl = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = blobUrl;
-              a.download = target.filename;
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => {
-                document.body.removeChild(a);
-                URL.revokeObjectURL(blobUrl);
-              }, 1000);
-              if (onProgress) onProgress(100);
-              resolve();
-            })
-            .catch(reject);
+          triggerDirectAnchor(target.url);
         }
       });
     }
@@ -1653,16 +1674,22 @@
       const postId = match[1];
       const actionsContainer = document.querySelector('app-post-actions .con');
       if (actionsContainer) {
-        let chip = actionsContainer.querySelector(`.r34-detail-dl-chip[data-post-id="${postId}"]`);
+        const existingChips = actionsContainer.querySelectorAll('.r34-detail-dl-chip');
+        let chip = existingChips[0];
+
         if (!chip) {
           chip = document.createElement('button');
           chip.className = 'r34-detail-dl-chip';
-          chip.setAttribute('data-post-id', postId);
           chip.setAttribute('type', 'button');
-
           actionsContainer.insertBefore(chip, actionsContainer.firstChild);
         }
 
+        // 移除多余的重复按钮，确保唯一性
+        for (let i = 1; i < existingChips.length; i++) {
+          existingChips[i].remove();
+        }
+
+        chip.setAttribute('data-post-id', postId);
         this.renderDetailButtonState(chip, postId);
       }
     }
