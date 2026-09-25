@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Rule34.world 高级下载助手 (Rule34 World Downloader Pro)
 // @namespace    https://github.com/alrgom/rule34-downloader
-// @version      1.1.1
-// @description  为 rule34.world 提供列表网格与详情页一键下载，支持本地任意文件夹选择(File System Access API)、下载进度显示、下载状态持久化防重复下载、一二级页状态多标签页实时同步、悬浮配置弹窗（自定义保存目录、命名模板、画质偏好等）。
+// @version      1.2.0
+// @description  为 rule34.world 提供列表网格与详情页一键下载、同Tag多页全量批量下载、本地任意文件夹选择(File System Access API)、下载进度显示、下载状态持久化防重复下载、一二级页状态多标签页实时同步、悬浮配置弹窗。
 // @author       Mavis & Assistant
 // @match        https://rule34.world/*
 // @match        https://*.rule34.world/*
@@ -53,6 +53,12 @@
 
     // 重复下载策略
     duplicateAction: 'ask',
+
+    // 批量下载配置
+    batchConcurrency: 3, // 批量下载并发数 (1-6)
+    batchSkipDownloaded: true, // 批量下载默认跳过已下载项目
+    batchFilterMediaType: 'all', // 'all', 'video', 'image'
+    batchMaxPages: 0, // 最大扫描页数 (0 为全部)
 
     // 功能开关
     saveMetadataJson: false,
@@ -158,9 +164,6 @@
       }
     }
 
-    /**
-     * 获取已保存的目录句柄（不阻塞且避免丢失 User Activation 导致的 SecurityError）
-     */
     static async getSavedDirectoryHandle(requestPermissionIfPrompt = false) {
       const settings = StorageManager.getSettings();
       if (!settings.useNativeFolderPicker) return null;
@@ -191,7 +194,6 @@
           return handle;
         }
 
-        // 仅在明确允许请求权限且拥有用户交互上下文时调用
         if (requestPermissionIfPrompt) {
           try {
             const reqPerm = await handle.requestPermission({ mode: 'readwrite' });
@@ -200,7 +202,7 @@
               return handle;
             }
           } catch (permErr) {
-            console.warn(`[${SCRIPT_NAME}] 请求目录读写权限受限，将自动使用常规下载:`, permErr);
+            console.warn(`[${SCRIPT_NAME}] 请求目录读写权限受限:`, permErr);
           }
         }
 
@@ -381,6 +383,75 @@
         console.error(`[${SCRIPT_NAME}] 请求 Post ${postId} 详情失败:`, e);
         throw e;
       }
+    }
+
+    /**
+     * 批量查询 Tag 下的多页全部作品
+     */
+    static async fetchTagPosts(tagName, options = {}, onProgressPage = null) {
+      const allPosts = [];
+      let cursor = null;
+      let page = 1;
+      const take = 30;
+      const maxPages = options.maxPages || 0;
+
+      while (true) {
+        const payload = {
+          includeTags: [tagName],
+          take: take,
+        };
+        if (cursor) {
+          payload.cursor = cursor;
+        }
+
+        try {
+          const res = await fetch('/api/v2/post/search/root', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            throw new Error(`搜索 API 响应异常: ${res.status}`);
+          }
+
+          const data = await res.json();
+          const items = data.items || [];
+          if (items.length === 0) break;
+
+          allPosts.push(...items);
+
+          if (onProgressPage) {
+            onProgressPage({
+              page: page,
+              loadedCount: allPosts.length,
+              currentItems: items,
+            });
+          }
+
+          if (!data.cursor || data.cursor === cursor) {
+            break; // 没有下一页了
+          }
+
+          cursor = data.cursor;
+          page++;
+
+          if (maxPages > 0 && page > maxPages) {
+            break;
+          }
+
+          // 轻微间隔避免频繁请求
+          await new Promise(r => setTimeout(r, 100));
+        } catch (e) {
+          console.error(`[${SCRIPT_NAME}] 抓取 Tag ${tagName} 第 ${page} 页失败:`, e);
+          break;
+        }
+      }
+
+      return allPosts;
     }
 
     static resolveDownloadTarget(postData, settings) {
@@ -584,12 +655,9 @@
       return task ? task.progress : 0;
     }
 
-    /**
-     * 开始下载（带完整的双重降级保障）
-     */
     static async startDownload(postId, options = {}) {
       if (this.isDownloading(postId)) {
-        showToast(`Post #${postId} 正在下载中...`, 'info');
+        if (!options.silent) showToast(`Post #${postId} 正在下载中...`, 'info');
         return;
       }
 
@@ -597,8 +665,8 @@
       const isDownloaded = StorageManager.isDownloaded(postId);
 
       if (isDownloaded && !options.force) {
-        if (settings.duplicateAction === 'skip') {
-          showToast(`Post #${postId} 已经下载过，已自动跳过`, 'info');
+        if (settings.duplicateAction === 'skip' || options.skipIfDownloaded) {
+          if (!options.silent) showToast(`Post #${postId} 已经下载过，已自动跳过`, 'info');
           return;
         } else if (settings.duplicateAction === 'ask') {
           const downloadInfo = StorageManager.getDownloadInfo(postId);
@@ -628,9 +696,7 @@
         taskState.target = target;
         this.notifyStateChanged(postId);
 
-        // 尝试获取本地目录句柄（不发起会报错的非交互 prompt）
         const nativeDirHandle = await DirectoryPickerManager.getSavedDirectoryHandle(false);
-
         let downloadSuccess = false;
 
         if (nativeDirHandle) {
@@ -641,11 +707,10 @@
             });
             downloadSuccess = true;
           } catch (fsErr) {
-            console.warn(`[${SCRIPT_NAME}] 本地目录写入失败，自动无缝降级为常规下载:`, fsErr);
+            console.warn(`[${SCRIPT_NAME}] 本地目录写入失败，自动降级为常规下载:`, fsErr);
           }
         }
 
-        // 若未使用本地目录或本地写入降级
         if (!downloadSuccess) {
           await this.executeGmDownload(target, (prog) => {
             taskState.progress = prog;
@@ -653,7 +718,6 @@
           });
         }
 
-        // 是否保存元数据 JSON
         if (settings.saveMetadataJson) {
           try {
             const metaJson = JSON.stringify(postData, null, 2);
@@ -683,7 +747,7 @@
           character: target.character,
         });
 
-        if (settings.showNotification && typeof GM_notification === 'function') {
+        if (settings.showNotification && typeof GM_notification === 'function' && !options.silent) {
           GM_notification({
             title: 'Rule34 下载完成',
             text: `Post #${postId} 已保存为 ${target.filename}`,
@@ -694,7 +758,10 @@
         console.error(`[${SCRIPT_NAME}] Post #${postId} 下载失败:`, err);
         taskState.status = 'error';
         taskState.error = err.message || '下载失败';
-        showToast(`Post #${postId} 下载失败: ${err.message || '网络或存储错误'}`, 'error');
+        if (!options.silent) {
+          showToast(`Post #${postId} 下载失败: ${err.message || '网络或存储错误'}`, 'error');
+        }
+        throw err;
       } finally {
         setTimeout(() => {
           this.activeDownloads.delete(postId);
@@ -847,17 +914,11 @@
                 }
                 triggerDirectAnchor(blob);
               } else {
-                // HTTP 异常时尝试直接触发 URL 下载
                 triggerDirectAnchor(target.url);
               }
             },
-            onerror: () => {
-              // GM_xhr 出错时兜底直接拉起下载链接
-              triggerDirectAnchor(target.url);
-            },
-            ontimeout: () => {
-              triggerDirectAnchor(target.url);
-            },
+            onerror: () => triggerDirectAnchor(target.url),
+            ontimeout: () => triggerDirectAnchor(target.url),
           });
         } else {
           triggerDirectAnchor(target.url);
@@ -868,7 +929,215 @@
 
   /**
    * ==========================================
-   * 6. 样式注入 (Styles & Themes)
+   * 6. 批量下载任务调度器 (Batch Download Manager)
+   * ==========================================
+   */
+
+  class BatchDownloadManager {
+    static isRunning = false;
+    static isPaused = false;
+    static shouldStop = false;
+
+    static queue = [];
+    static totalCount = 0;
+    static completedCount = 0;
+    static skippedCount = 0;
+    static failedCount = 0;
+    static currentTagName = '';
+
+    static activeWorkers = 0;
+    static concurrency = 3;
+
+    static updateUiCallback = null;
+
+    /**
+     * 启动 Tag 批量下载
+     */
+    static async startBatchDownload(tagName, options = {}, updateCallback = null) {
+      if (this.isRunning) {
+        showToast('已有批量下载任务正在进行中', 'info');
+        return;
+      }
+
+      this.isRunning = true;
+      this.isPaused = false;
+      this.shouldStop = false;
+      this.currentTagName = tagName;
+      this.updateUiCallback = updateCallback;
+
+      this.queue = [];
+      this.completedCount = 0;
+      this.skippedCount = 0;
+      this.failedCount = 0;
+
+      const settings = StorageManager.getSettings();
+      this.concurrency = options.concurrency || settings.batchConcurrency || 3;
+
+      this.notifyProgress({
+        statusText: `正在全量扫描 Tag #${tagName} 的全部多页作品...`,
+        phase: 'scanning',
+      });
+
+      // 1. 获取该 Tag 的全部多页 Posts
+      const rawPosts = await ResourceResolver.fetchTagPosts(tagName, {
+        maxPages: options.maxPages || settings.batchMaxPages || 0,
+      }, (scanProgress) => {
+        this.notifyProgress({
+          statusText: `正在扫描第 ${scanProgress.page} 页 (已发现 ${scanProgress.loadedCount} 篇作品)...`,
+          phase: 'scanning',
+          scannedCount: scanProgress.loadedCount,
+        });
+      });
+
+      if (rawPosts.length === 0) {
+        this.isRunning = false;
+        this.notifyProgress({
+          statusText: `未找到与 Tag #${tagName} 相关的作品`,
+          phase: 'finished',
+        });
+        showToast(`未找到 Tag #${tagName} 的作品`, 'info');
+        return;
+      }
+
+      // 2. 根据媒体类型过滤 (全部 / 仅视频 / 仅图片)
+      let filteredPosts = rawPosts;
+      const mediaFilter = options.filterMediaType || settings.batchFilterMediaType || 'all';
+      if (mediaFilter === 'video') {
+        filteredPosts = rawPosts.filter(p => p.type === 1);
+      } else if (mediaFilter === 'image') {
+        filteredPosts = rawPosts.filter(p => p.type === 0);
+      }
+
+      // 3. 防重复过滤 (如果开启了跳过已下载)
+      const skipDownloaded = options.skipDownloaded !== undefined ? options.skipDownloaded : settings.batchSkipDownloaded;
+      const downloadList = [];
+
+      for (const p of filteredPosts) {
+        const isDownloaded = StorageManager.isDownloaded(p.id);
+        if (skipDownloaded && isDownloaded) {
+          this.skippedCount++;
+        } else {
+          downloadList.push(p);
+        }
+      }
+
+      this.queue = downloadList;
+      this.totalCount = filteredPosts.length;
+
+      this.notifyProgress({
+        statusText: `扫描完成！共发现 ${filteredPosts.length} 篇作品（待下载: ${downloadList.length}，已跳过: ${this.skippedCount}）`,
+        phase: 'downloading',
+      });
+
+      if (downloadList.length === 0) {
+        this.isRunning = false;
+        this.notifyProgress({
+          statusText: `所有作品已在之前下载完毕，无需重复下载！`,
+          phase: 'finished',
+        });
+        showToast(`Tag #${tagName} 所有作品均已下载过`, 'info');
+        return;
+      }
+
+      // 4. 并发队列执行
+      await this.runWorkerQueue();
+
+      this.isRunning = false;
+      this.notifyProgress({
+        statusText: `🎉 批量下载完成！成功: ${this.completedCount}，跳过: ${this.skippedCount}，失败: ${this.failedCount}`,
+        phase: 'finished',
+      });
+
+      if (settings.showNotification && typeof GM_notification === 'function') {
+        GM_notification({
+          title: `Tag #${tagName} 批量下载完成`,
+          text: `共处理 ${this.totalCount} 篇，成功下载 ${this.completedCount} 篇`,
+          timeout: 4000,
+        });
+      }
+    }
+
+    static async runWorkerQueue() {
+      const workers = [];
+      for (let i = 0; i < this.concurrency; i++) {
+        workers.push(this.workerLoop());
+      }
+      await Promise.all(workers);
+    }
+
+    static async workerLoop() {
+      while (this.queue.length > 0 && !this.shouldStop) {
+        if (this.isPaused) {
+          await new Promise(r => setTimeout(r, 400));
+          continue;
+        }
+
+        const post = this.queue.shift();
+        if (!post) break;
+
+        this.activeWorkers++;
+        this.notifyProgress({
+          phase: 'downloading',
+          currentPostId: post.id,
+        });
+
+        try {
+          await DownloadController.startDownload(post.id, {
+            silent: true,
+            force: true,
+          });
+          this.completedCount++;
+        } catch (err) {
+          console.error(`[${SCRIPT_NAME}] 批量下载 Post #${post.id} 失败:`, err);
+          this.failedCount++;
+        } finally {
+          this.activeWorkers--;
+          this.notifyProgress({
+            phase: 'downloading',
+          });
+          // 稍微间隔，避免触发 CDN 瞬时频控
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+    }
+
+    static pause() {
+      this.isPaused = true;
+      this.notifyProgress({ phase: 'paused', statusText: '批量下载已暂停' });
+    }
+
+    static resume() {
+      this.isPaused = false;
+      this.notifyProgress({ phase: 'downloading', statusText: '批量下载继续中...' });
+    }
+
+    static stop() {
+      this.shouldStop = true;
+      this.isRunning = false;
+      this.queue = [];
+      this.notifyProgress({ phase: 'finished', statusText: '批量下载已终止' });
+    }
+
+    static notifyProgress(extra = {}) {
+      if (typeof this.updateUiCallback === 'function') {
+        this.updateUiCallback(Object.assign({
+          tagName: this.currentTagName,
+          totalCount: this.totalCount,
+          completedCount: this.completedCount,
+          skippedCount: this.skippedCount,
+          failedCount: this.failedCount,
+          remainingCount: this.queue.length,
+          activeWorkers: this.activeWorkers,
+          isRunning: this.isRunning,
+          isPaused: this.isPaused,
+        }, extra));
+      }
+    }
+  }
+
+  /**
+   * ==========================================
+   * 7. 样式注入 (Styles & Themes)
    * ==========================================
    */
 
@@ -879,6 +1148,35 @@
       @keyframes r34-spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
+      }
+
+      /* --- 批量下载顶部工具条按钮 --- */
+      .r34-batch-tag-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #721199, #520071);
+        color: #ffffff;
+        border: 1px solid rgba(235, 178, 255, 0.4);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        user-select: none;
+        box-shadow: 0 2px 8px rgba(114, 17, 153, 0.4);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        margin: 4px 8px;
+        vertical-align: middle;
+      }
+      .r34-batch-tag-btn:hover {
+        background: linear-gradient(135deg, #8c33b3, #721199);
+        box-shadow: 0 4px 14px rgba(114, 17, 153, 0.7);
+        transform: translateY(-1px) scale(1.03);
+      }
+      .r34-batch-tag-btn .material-icons {
+        font-size: 16px;
       }
 
       /* --- 网格卡片右下角下载按钮 --- */
@@ -1009,7 +1307,7 @@
         border-color: #ebb2ff;
       }
 
-      /* --- 配置弹窗 Modal --- */
+      /* --- 配置与批量弹窗 Modal --- */
       .r34-modal-overlay {
         position: fixed;
         top: 0;
@@ -1032,7 +1330,7 @@
         background: #1e2020;
         color: #e2e2e2;
         width: 90%;
-        max-width: 600px;
+        max-width: 620px;
         max-height: 88vh;
         border-radius: 14px;
         border: 1px solid rgba(226, 226, 226, 0.15);
@@ -1165,6 +1463,53 @@
         border-color: rgba(255, 255, 255, 0.15);
       }
 
+      /* 批量下载面板样式 */
+      .r34-batch-progress-box {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(235, 178, 255, 0.2);
+        border-radius: 10px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .r34-progress-bar-bg {
+        width: 100%;
+        height: 10px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.1);
+        overflow: hidden;
+        position: relative;
+      }
+      .r34-progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #721199, #57de9e);
+        width: 0%;
+        transition: width 0.25s ease;
+      }
+      .r34-batch-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        text-align: center;
+      }
+      .r34-stat-card {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 8px 4px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .r34-stat-card .val {
+        font-size: 16px;
+        font-weight: 700;
+        color: #ebb2ff;
+      }
+      .r34-stat-card .lbl {
+        font-size: 11px;
+        color: rgba(226, 226, 226, 0.6);
+        margin-top: 2px;
+      }
+
       .r34-checkbox-label {
         display: flex;
         align-items: center;
@@ -1216,6 +1561,15 @@
         background: #930100;
         color: #ffffff;
       }
+      .r34-btn-success {
+        background: #005233;
+        color: #57de9e;
+        border: 1px solid #57de9e;
+      }
+      .r34-btn-success:hover {
+        background: #006c46;
+        color: #ffffff;
+      }
 
       .r34-toast {
         position: fixed;
@@ -1264,7 +1618,220 @@
 
   /**
    * ==========================================
-   * 7. UI 组件与弹窗渲染 (UI Components)
+   * 8. 批量下载面板 Modal (Batch Modal)
+   * ==========================================
+   */
+
+  class BatchDownloadModal {
+    static overlay = null;
+
+    static show(initialTag = '') {
+      if (this.overlay) {
+        this.overlay.remove();
+        this.overlay = null;
+      }
+
+      const settings = StorageManager.getSettings();
+      const detectedTag = initialTag || UIController.getCurrentPageTag() || 'rwt4184';
+
+      this.overlay = document.createElement('div');
+      this.overlay.className = 'r34-modal-overlay';
+
+      this.overlay.innerHTML = `
+        <div class="r34-modal-dialog">
+          <div class="r34-modal-header">
+            <h2>
+              <span class="material-icons" style="font-size:20px;">layers</span>
+              Tag 全量多页批量下载
+            </h2>
+            <button class="r34-modal-close-btn" id="r34-batch-close">✕</button>
+          </div>
+          <div class="r34-modal-body">
+            <!-- Tag 输入与配置 -->
+            <div class="r34-form-group">
+              <label>🏷️ 目标标签 (Tag 名称，如 rwt4184, overwatch, 2026 等)</label>
+              <input type="text" class="r34-input" id="r34-batch-tag-input" value="${escapeHtml(detectedTag)}" placeholder="输入要全量下载的 tag...">
+              <div class="hint">系统将自动翻页爬取该 Tag 下的全部作品并按队列下载。</div>
+            </div>
+
+            <!-- 批量过滤与并发参数 -->
+            <div class="r34-row">
+              <div class="r34-form-group">
+                <label>🎞️ 媒体类型过滤</label>
+                <select class="r34-select" id="r34-batch-media-filter">
+                  <option value="all">下载全部 (图片 + 视频)</option>
+                  <option value="video">仅下载视频 (MP4)</option>
+                  <option value="image">仅下载图片 (JPG/AVIF)</option>
+                </select>
+              </div>
+
+              <div class="r34-form-group">
+                <label>⚡ 下载并发数 (建议 3-4)</label>
+                <select class="r34-select" id="r34-batch-concurrency">
+                  <option value="1">1 (单线程温和)</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3 (推荐)</option>
+                  <option value="4">4 (极速)</option>
+                  <option value="6">6 (高并发)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="r34-row">
+              <div class="r34-form-group">
+                <label>📄 最大扫描页数</label>
+                <select class="r34-select" id="r34-batch-max-pages">
+                  <option value="0" selected>全部页 (直至末页)</option>
+                  <option value="1">仅前 1 页 (约 30 篇)</option>
+                  <option value="3">前 3 页 (约 90 篇)</option>
+                  <option value="5">前 5 页 (约 150 篇)</option>
+                  <option value="10">前 10 页 (约 300 篇)</option>
+                  <option value="20">前 20 页 (约 600 篇)</option>
+                </select>
+              </div>
+
+              <div class="r34-form-group" style="justify-content: flex-end; padding-bottom: 4px;">
+                <label class="r34-checkbox-label">
+                  <input type="checkbox" id="r34-batch-skip-downloaded" checked>
+                  <span>跳过历史已下载作品 (智能去重)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 实时进度展示盒 -->
+            <div class="r34-batch-progress-box" id="r34-batch-progress-panel">
+              <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:500;">
+                <span id="r34-batch-status-text">准备就绪，点击下方按钮开始批量下载</span>
+                <span id="r34-batch-percent-text" style="color:#57de9e;">0%</span>
+              </div>
+              <div class="r34-progress-bar-bg">
+                <div class="r34-progress-bar-fill" id="r34-batch-progress-bar"></div>
+              </div>
+              <div class="r34-batch-stat-grid">
+                <div class="r34-stat-card">
+                  <div class="val" id="r34-stat-total">0</div>
+                  <div class="lbl">发现总数</div>
+                </div>
+                <div class="r34-stat-card">
+                  <div class="val" id="r34-stat-success" style="color:#57de9e;">0</div>
+                  <div class="lbl">成功下载</div>
+                </div>
+                <div class="r34-stat-card">
+                  <div class="val" id="r34-stat-skip" style="color:#ebb2ff;">0</div>
+                  <div class="lbl">已跳过</div>
+                </div>
+                <div class="r34-stat-card">
+                  <div class="val" id="r34-stat-fail" style="color:#ffb4a8;">0</div>
+                  <div class="lbl">失败/错误</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="r34-modal-footer">
+            <div style="display:flex; gap:8px;">
+              <button class="r34-btn r34-btn-secondary" id="r34-batch-pause" style="display:none;">暂停</button>
+              <button class="r34-btn r34-btn-danger" id="r34-batch-stop" style="display:none;">终止下载</button>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="r34-btn r34-btn-secondary" id="r34-batch-cancel">关闭</button>
+              <button class="r34-btn r34-btn-primary" id="r34-batch-start">
+                <span class="material-icons" style="font-size:16px;">cloud_download</span>
+                开始批量下载
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(this.overlay);
+
+      const close = () => {
+        if (this.overlay) {
+          this.overlay.remove();
+          this.overlay = null;
+        }
+      };
+
+      this.overlay.querySelector('#r34-batch-close').onclick = close;
+      this.overlay.querySelector('#r34-batch-cancel').onclick = close;
+
+      const startBtn = this.overlay.querySelector('#r34-batch-start');
+      const pauseBtn = this.overlay.querySelector('#r34-batch-pause');
+      const stopBtn = this.overlay.querySelector('#r34-batch-stop');
+      const tagInput = this.overlay.querySelector('#r34-batch-tag-input');
+      const statusText = this.overlay.querySelector('#r34-batch-status-text');
+      const percentText = this.overlay.querySelector('#r34-batch-percent-text');
+      const progressBar = this.overlay.querySelector('#r34-batch-progress-bar');
+      const statTotal = this.overlay.querySelector('#r34-stat-total');
+      const statSuccess = this.overlay.querySelector('#r34-stat-success');
+      const statSkip = this.overlay.querySelector('#r34-stat-skip');
+      const statFail = this.overlay.querySelector('#r34-stat-fail');
+
+      pauseBtn.onclick = () => {
+        if (BatchDownloadManager.isPaused) {
+          BatchDownloadManager.resume();
+          pauseBtn.textContent = '暂停';
+        } else {
+          BatchDownloadManager.pause();
+          pauseBtn.textContent = '继续';
+        }
+      };
+
+      stopBtn.onclick = () => {
+        if (confirm('确定终止当前的批量下载任务吗？')) {
+          BatchDownloadManager.stop();
+        }
+      };
+
+      startBtn.onclick = async () => {
+        const tagName = tagInput.value.trim();
+        if (!tagName) {
+          alert('请输入要下载的 Tag 名称！');
+          return;
+        }
+
+        startBtn.disabled = true;
+        tagInput.disabled = true;
+        pauseBtn.style.display = 'inline-flex';
+        stopBtn.style.display = 'inline-flex';
+
+        const options = {
+          concurrency: parseInt(this.overlay.querySelector('#r34-batch-concurrency').value, 10) || 3,
+          maxPages: parseInt(this.overlay.querySelector('#r34-batch-max-pages').value, 10) || 0,
+          filterMediaType: this.overlay.querySelector('#r34-batch-media-filter').value,
+          skipDownloaded: this.overlay.querySelector('#r34-batch-skip-downloaded').checked,
+        };
+
+        await BatchDownloadManager.startBatchDownload(tagName, options, (prog) => {
+          if (!this.overlay) return;
+
+          if (prog.statusText) statusText.textContent = prog.statusText;
+          if (prog.totalCount !== undefined) statTotal.textContent = prog.totalCount;
+          if (prog.completedCount !== undefined) statSuccess.textContent = prog.completedCount;
+          if (prog.skippedCount !== undefined) statSkip.textContent = prog.skippedCount;
+          if (prog.failedCount !== undefined) statFail.textContent = prog.failedCount;
+
+          if (prog.totalCount > 0) {
+            const processed = (prog.completedCount || 0) + (prog.skippedCount || 0) + (prog.failedCount || 0);
+            const percent = Math.min(100, Math.floor((processed / prog.totalCount) * 100));
+            progressBar.style.width = `${percent}%`;
+            percentText.textContent = `${percent}%`;
+          }
+
+          if (prog.phase === 'finished') {
+            startBtn.disabled = false;
+            tagInput.disabled = false;
+            pauseBtn.style.display = 'none';
+            stopBtn.style.display = 'none';
+          }
+        });
+      };
+    }
+  }
+
+  /**
+   * ==========================================
+   * 9. 配置弹窗 Modal (Settings Modal)
    * ==========================================
    */
 
@@ -1317,6 +1884,17 @@
                 <div class="hint">
                   ${hasNativePicker ? '💡 点击“选择文件夹”可直接将文件存放到硬盘的任意位置（如 <code>D:\\Images\\Rule34</code>），无需受浏览器默认下载路径限制。' : '⚠️ 当前浏览器暂不支持原生文件夹选择，将自动使用浏览器默认下载目录下的相对路径。'}
                 </div>
+              </div>
+            </div>
+
+            <!-- 快捷批量下载入口 -->
+            <div class="r34-form-group" style="padding: 10px 14px; background: rgba(114, 17, 153, 0.15); border-radius: 8px; border: 1px solid rgba(235, 178, 255, 0.3);">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:13px; font-weight:500; color:#ebb2ff;">📦 批量多页全量下载工具</div>
+                  <div style="font-size:11px; color:rgba(226,226,226,0.6); margin-top:2px;">一键自动翻页下载特定 Tag 的全部作品（支持智能去重）</div>
+                </div>
+                <button class="r34-btn r34-btn-primary" id="r34-open-batch-btn" style="padding:5px 12px; font-size:12px;">打开批量工具</button>
               </div>
             </div>
 
@@ -1440,6 +2018,11 @@
         if (e.target === overlay) close();
       });
 
+      overlay.querySelector('#r34-open-batch-btn').onclick = () => {
+        close();
+        BatchDownloadModal.show();
+      };
+
       const pickBtn = overlay.querySelector('#r34-pick-folder-btn');
       if (pickBtn) {
         pickBtn.onclick = async () => {
@@ -1533,7 +2116,7 @@
 
   /**
    * ==========================================
-   * 8. 页面 DOM 注入与更新 (DOM Observers & Injectors)
+   * 10. 页面 DOM 注入与更新 (DOM Observers & Injectors)
    * ==========================================
    */
 
@@ -1546,7 +2129,8 @@
       this.scanAndInject();
 
       if (typeof GM_registerMenuCommand === 'function') {
-        GM_registerMenuCommand('⚙️ 下载器设置与文件夹选择 (Settings)', () => SettingsModal.show());
+        GM_registerMenuCommand('⚙️ 下载器设置 (Settings)', () => SettingsModal.show());
+        GM_registerMenuCommand('⚡ 批量多页下载 (Batch Download)', () => BatchDownloadModal.show());
       }
 
       DownloadController.subscribe(() => {
@@ -1555,8 +2139,20 @@
     }
 
     /**
-     * 全局事件委托拦截：防止 Angular 事件吞噬或 DOM 刷新脱离
+     * 获取当前页面 Tag 标识（如 /rwt4184 -> rwt4184）
      */
+    static getCurrentPageTag() {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+      if (!path) return null;
+
+      // 过滤非 tag 的固定系统页面路由
+      const reserved = ['highest', 'hot', 'playlists', 'trends', 'comments', 'announcements', 'contact-us', 'terms', 'dmca', 'post', 'auth', 'upgrade-to-premium'];
+      const firstSegment = path.split('/')[0];
+      if (reserved.includes(firstSegment)) return null;
+
+      return decodeURIComponent(firstSegment);
+    }
+
     static bindGlobalEvents() {
       const handleDownloadClick = (e) => {
         const targetBtn = e.target.closest('.r34-card-dl-btn, .r34-detail-dl-chip');
@@ -1572,7 +2168,6 @@
         }
       };
 
-      // 捕获阶段拦截点击与指针事件，彻底防止父级 <a> 标签跳转
       document.addEventListener('click', handleDownloadClick, true);
       document.addEventListener('pointerdown', (e) => {
         if (e.target.closest('.r34-card-dl-btn, .r34-detail-dl-chip')) {
@@ -1594,7 +2189,7 @@
       const fab = document.createElement('div');
       fab.id = 'r34-fab-btn';
       fab.className = 'r34-fab-btn';
-      fab.title = `${SCRIPT_NAME} 设置`;
+      fab.title = `${SCRIPT_NAME} 设置与批量下载`;
       fab.innerHTML = `<span class="material-icons">download</span>`;
 
       fab.onclick = (e) => {
@@ -1637,12 +2232,47 @@
     }
 
     static scanAndInject() {
+      this.injectTagPageBatchButton();
       this.injectGridCardButtons();
       this.injectDetailPageButton();
     }
 
+    /**
+     * 在 Tag 列表页（如 /rwt4184）注入「⚡ 批量下载此 Tag」按钮
+     */
+    static injectTagPageBatchButton() {
+      const currentTag = this.getCurrentPageTag();
+      if (!currentTag) return;
+
+      // 寻找筛选栏或页面标题容器
+      const targetHeader = document.querySelector('app-filters-and-settings, .page-container--side-padding, app-posts-page');
+      if (!targetHeader) return;
+
+      if (!document.querySelector(`.r34-batch-tag-btn[data-tag="${currentTag}"]`)) {
+        const btn = document.createElement('button');
+        btn.className = 'r34-batch-tag-btn';
+        btn.setAttribute('data-tag', currentTag);
+        btn.setAttribute('type', 'button');
+        btn.innerHTML = `
+          <span class="material-icons">layers</span>
+          <span>批量下载 #${currentTag} (多页全量)</span>
+        `;
+
+        btn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          BatchDownloadModal.show(currentTag);
+        };
+
+        // 优先插入到过滤器顶部或页面前列
+        const filterHead = document.querySelector('app-filters-and-settings') || targetHeader;
+        if (filterHead) {
+          filterHead.parentNode.insertBefore(btn, filterHead);
+        }
+      }
+    }
+
     static injectGridCardButtons() {
-      // 遍历所有可能的卡片容器
       const cardLinks = document.querySelectorAll('a.box, a[href*="/post/"]');
 
       cardLinks.forEach(card => {
@@ -1684,7 +2314,6 @@
           actionsContainer.insertBefore(chip, actionsContainer.firstChild);
         }
 
-        // 移除多余的重复按钮，确保唯一性
         for (let i = 1; i < existingChips.length; i++) {
           existingChips[i].remove();
         }
@@ -1761,14 +2390,14 @@
 
   /**
    * ==========================================
-   * 9. 启动入口 (Initialization)
+   * 11. 启动入口 (Initialization)
    * ==========================================
    */
 
   function init() {
     DownloadController.init();
     UIController.init();
-    console.log(`[${SCRIPT_NAME}] v1.1.1 初始化就绪！`);
+    console.log(`[${SCRIPT_NAME}] v1.2.0 初始化就绪！`);
   }
 
   if (document.readyState === 'loading') {
