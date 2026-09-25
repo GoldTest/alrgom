@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Rule34.world 高级下载助手 (Rule34 World Downloader Pro)
 // @namespace    https://github.com/alrgom/rule34-downloader
-// @version      1.1.0
+// @version      1.1.1
 // @description  为 rule34.world 提供列表网格与详情页一键下载，支持本地任意文件夹选择(File System Access API)、下载进度显示、下载状态持久化防重复下载、一二级页状态多标签页实时同步、悬浮配置弹窗（自定义保存目录、命名模板、画质偏好等）。
 // @author       Mavis & Assistant
 // @match        https://rule34.world/*
@@ -40,29 +40,27 @@
   const DIR_HANDLE_KEY = 'chosen_download_dir';
 
   const DEFAULT_SETTINGS = {
-    // 基础存储配置
-    useNativeFolderPicker: true, // 是否优先使用本地文件系统原生文件夹
-    savedFolderName: '', // 用户选中的文件夹显示名
-    subFolder: 'Rule34World/{artist}', // 默认存储子目录（支持变量）
-    filenameTemplate: '{id}_{artist}_{character}', // 文件名模板
-    maxTagCountInName: 3, // 模板中提取标签的最大数量
+    useNativeFolderPicker: true,
+    savedFolderName: '',
+    subFolder: 'Rule34World/{artist}',
+    filenameTemplate: '{id}_{artist}_{character}',
+    maxTagCountInName: 3,
 
     // 画质与格式偏好
-    imageFormat: 'original_jpg', // 'original_jpg' (pic.jpg), 'avif' (picavif.avif)
-    videoQuality: '1080p', // '1080p', '720p', '480p', 'original'
-    videoCodec: 'mp4', // 'mp4', 'av1', 'hevc'
+    imageFormat: 'original_jpg',
+    videoQuality: '1080p',
+    videoCodec: 'mp4',
 
     // 重复下载策略
-    duplicateAction: 'ask', // 'ask' (弹窗询问), 'skip' (直接跳过), 'overwrite' (直接重新下载)
+    duplicateAction: 'ask',
 
     // 功能开关
-    saveMetadataJson: false, // 是否同时下载元数据 JSON
-    showNotification: true, // 下载完成是否弹出桌面通知
-    btnPosition: 'bottom-right', // 网格按钮位置
-    quickSettingsFab: true, // 界面右下角显示悬浮配置球
+    saveMetadataJson: false,
+    showNotification: true,
+    btnPosition: 'bottom-right',
+    quickSettingsFab: true,
   };
 
-  // Rule34 官方文件类型映射表
   const FILE_TYPES = {
     1: 'raw',
     10: 'pic.jpg',
@@ -108,6 +106,7 @@
 
   class DirectoryPickerManager {
     static dbPromise = null;
+    static cachedHandle = null;
 
     static getDB() {
       if (!this.dbPromise) {
@@ -126,9 +125,6 @@
       return this.dbPromise;
     }
 
-    /**
-     * 调起系统文件夹选择器
-     */
     static async pickDirectory() {
       if (typeof window.showDirectoryPicker !== 'function') {
         throw new Error('当前浏览器不支持 File System Access API，将采用常规下载方式');
@@ -140,7 +136,6 @@
           startIn: 'downloads',
         });
 
-        // 保存到 IndexedDB
         const db = await this.getDB();
         await new Promise((resolve, reject) => {
           const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -150,6 +145,7 @@
           tx.onerror = () => reject(tx.error);
         });
 
+        this.cachedHandle = dirHandle;
         const settings = StorageManager.getSettings();
         settings.savedFolderName = dirHandle.name;
         settings.useNativeFolderPicker = true;
@@ -157,20 +153,25 @@
 
         return dirHandle;
       } catch (e) {
-        if (e.name === 'AbortError') {
-          return null; // 用户取消选择
-        }
+        if (e.name === 'AbortError') return null;
         throw e;
       }
     }
 
     /**
-     * 获取已保存的目录句柄并验证权限
+     * 获取已保存的目录句柄（不阻塞且避免丢失 User Activation 导致的 SecurityError）
      */
-    static async getSavedDirectoryHandle() {
+    static async getSavedDirectoryHandle(requestPermissionIfPrompt = false) {
       const settings = StorageManager.getSettings();
       if (!settings.useNativeFolderPicker) return null;
       if (typeof window.showDirectoryPicker !== 'function') return null;
+
+      if (this.cachedHandle) {
+        try {
+          const perm = await this.cachedHandle.queryPermission({ mode: 'readwrite' });
+          if (perm === 'granted') return this.cachedHandle;
+        } catch (e) {}
+      }
 
       try {
         const db = await this.getDB();
@@ -184,24 +185,35 @@
 
         if (!handle) return null;
 
-        // 验证读写权限
-        let perm = await handle.queryPermission({ mode: 'readwrite' });
-        if (perm !== 'granted') {
-          perm = await handle.requestPermission({ mode: 'readwrite' });
+        const perm = await handle.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          this.cachedHandle = handle;
+          return handle;
         }
 
-        return perm === 'granted' ? handle : null;
+        // 仅在明确允许请求权限且拥有用户交互上下文时调用
+        if (requestPermissionIfPrompt) {
+          try {
+            const reqPerm = await handle.requestPermission({ mode: 'readwrite' });
+            if (reqPerm === 'granted') {
+              this.cachedHandle = handle;
+              return handle;
+            }
+          } catch (permErr) {
+            console.warn(`[${SCRIPT_NAME}] 请求目录读写权限受限，将自动使用常规下载:`, permErr);
+          }
+        }
+
+        return null;
       } catch (e) {
         console.warn(`[${SCRIPT_NAME}] 读取已保存目录失败:`, e);
         return null;
       }
     }
 
-    /**
-     * 清除选中的文件夹
-     */
     static async clearSavedDirectory() {
       try {
+        this.cachedHandle = null;
         const db = await this.getDB();
         await new Promise((resolve, reject) => {
           const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -220,11 +232,7 @@
       }
     }
 
-    /**
-     * 将文件保存到已授权的本地目录及其子目录
-     */
     static async saveFileToHandle(dirHandle, subFolderPath, fileName, blobData, onProgress) {
-      // 递归创建/获取子目录
       let currentDir = dirHandle;
       if (subFolderPath) {
         const parts = subFolderPath.split(/[/\\]+/).filter(Boolean);
@@ -233,7 +241,6 @@
         }
       }
 
-      // 获取目标文件句柄
       const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
       const writable = await fileHandle.createWritable();
 
@@ -376,9 +383,6 @@
       }
     }
 
-    /**
-     * 根据设置解析最佳下载 URL 和文件名
-     */
     static resolveDownloadTarget(postData, settings) {
       const postId = postData.id;
       const isVideo = postData.type === 1;
@@ -419,7 +423,7 @@
           else if (quality === '480p') candidateLadder = [212, 211, 213, 112, 111, 100];
           else candidateLadder = [1, 100, 214, 213, 212, 200, 114, 113];
         } else {
-          // MP4 (H.264)
+          // MP4
           if (quality === '1080p') candidateLadder = [114, 100, 1, 113, 112, 314, 214];
           else if (quality === '720p') candidateLadder = [113, 114, 100, 112, 313, 213];
           else if (quality === '480p') candidateLadder = [112, 111, 113, 100, 312, 212];
@@ -444,7 +448,6 @@
         }
         extension = 'mp4';
       } else {
-        // Image: 优先 raw 或 pic.jpg 原图
         if (settings.imageFormat === 'avif' && hasCode(30)) {
           chosenCode = 30;
           extension = 'avif';
@@ -468,7 +471,6 @@
 
       const fileUrl = buildUrl(chosenCode);
 
-      // 解析标签数据
       const tags = postData.tags || [];
       const artists = tags.filter(t => t.type === 8 || t.type === '8').map(t => t.value);
       const characters = tags.filter(t => t.type === 4 || t.type === '4').map(t => t.value);
@@ -483,7 +485,6 @@
       const postDate = new Date(postData.posted || postData.created || Date.now());
       const dateStr = postDate.toISOString().split('T')[0];
 
-      // 生成文件名
       let filename = settings.filenameTemplate || '{id}_{artist}_{character}';
       filename = filename
         .replace(/\{id\}/gi, postId)
@@ -501,7 +502,6 @@
       if (!filename) filename = `post_${postId}`;
       filename = `${filename}.${extension}`;
 
-      // 解析子目录
       let subFolder = (settings.subFolder || 'Rule34World').trim();
       subFolder = subFolder
         .replace(/\{id\}/gi, postId)
@@ -585,7 +585,7 @@
     }
 
     /**
-     * 开始下载
+     * 开始下载（带完整的双重降级保障）
      */
     static async startDownload(postId, options = {}) {
       if (this.isDownloading(postId)) {
@@ -596,7 +596,6 @@
       const settings = StorageManager.getSettings();
       const isDownloaded = StorageManager.isDownloaded(postId);
 
-      // 防重复下载拦截
       if (isDownloaded && !options.force) {
         if (settings.duplicateAction === 'skip') {
           showToast(`Post #${postId} 已经下载过，已自动跳过`, 'info');
@@ -629,17 +628,25 @@
         taskState.target = target;
         this.notifyStateChanged(postId);
 
-        // 检查是否可以使用已授权的本地目录 (File System Access API)
-        const nativeDirHandle = await DirectoryPickerManager.getSavedDirectoryHandle();
+        // 尝试获取本地目录句柄（不发起会报错的非交互 prompt）
+        const nativeDirHandle = await DirectoryPickerManager.getSavedDirectoryHandle(false);
+
+        let downloadSuccess = false;
 
         if (nativeDirHandle) {
-          // 使用原生本地目录直接保存
-          await this.downloadViaNativeFs(target, nativeDirHandle, (prog) => {
-            taskState.progress = prog;
-            this.notifyStateChanged(postId);
-          });
-        } else {
-          // 常规 GM_download 相对目录模式
+          try {
+            await this.downloadViaNativeFs(target, nativeDirHandle, (prog) => {
+              taskState.progress = prog;
+              this.notifyStateChanged(postId);
+            });
+            downloadSuccess = true;
+          } catch (fsErr) {
+            console.warn(`[${SCRIPT_NAME}] 本地目录写入失败，自动无缝降级为常规下载:`, fsErr);
+          }
+        }
+
+        // 若未使用本地目录或本地写入降级
+        if (!downloadSuccess) {
           await this.executeGmDownload(target, (prog) => {
             taskState.progress = prog;
             this.notifyStateChanged(postId);
@@ -653,7 +660,7 @@
             const blob = new Blob([metaJson], { type: 'application/json' });
             const metaFilename = target.filename.replace(/\.[^.]+$/, '.json');
 
-            if (nativeDirHandle) {
+            if (nativeDirHandle && downloadSuccess) {
               await DirectoryPickerManager.saveFileToHandle(nativeDirHandle, target.subFolder, metaFilename, blob);
             } else {
               const metaUrl = URL.createObjectURL(blob);
@@ -679,7 +686,7 @@
         if (settings.showNotification && typeof GM_notification === 'function') {
           GM_notification({
             title: 'Rule34 下载完成',
-            text: `Post #${postId} 已保存到 ${nativeDirHandle ? nativeDirHandle.name + '/' : ''}${target.savePath}`,
+            text: `Post #${postId} 已保存为 ${target.filename}`,
             timeout: 3000,
           });
         }
@@ -697,9 +704,6 @@
       }
     }
 
-    /**
-     * 通过 File System Access API 下载并存盘
-     */
     static downloadViaNativeFs(target, dirHandle, onProgress) {
       return new Promise((resolve, reject) => {
         if (typeof GM_xmlhttpRequest === 'function') {
@@ -730,7 +734,6 @@
             ontimeout: () => reject(new Error('下载超时')),
           });
         } else {
-          // fetch
           fetch(target.url)
             .then(res => {
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -743,9 +746,6 @@
       });
     }
 
-    /**
-     * 包装 GM_download，带进度回调与降级方案
-     */
     static executeGmDownload(target, onProgress) {
       return new Promise((resolve, reject) => {
         if (typeof GM_download === 'function') {
@@ -865,13 +865,13 @@
         position: absolute;
         right: 6px;
         bottom: 6px;
-        z-index: 12;
-        width: 30px;
-        height: 30px;
+        z-index: 20 !important;
+        width: 32px;
+        height: 32px;
         border-radius: 8px;
-        background: rgba(26, 28, 28, 0.88);
+        background: rgba(26, 28, 28, 0.9);
         color: #e2e2e2;
-        border: 1px solid rgba(255, 255, 255, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.22);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -881,17 +881,21 @@
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         backdrop-filter: blur(8px);
         user-select: none;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        pointer-events: auto !important;
       }
       .r34-card-dl-btn:hover {
         background: #721199;
         color: #ffffff;
         border-color: #ebb2ff;
-        transform: translateY(-2px) scale(1.06);
-        box-shadow: 0 4px 12px rgba(114, 17, 153, 0.6);
+        transform: translateY(-2px) scale(1.08);
+        box-shadow: 0 4px 14px rgba(114, 17, 153, 0.7);
       }
       .r34-card-dl-btn:active {
         transform: translateY(0) scale(0.95);
+      }
+      .r34-card-dl-btn * {
+        pointer-events: none;
       }
       .r34-card-dl-btn .r34-btn-progress {
         font-size: 10px;
@@ -899,7 +903,7 @@
         letter-spacing: -0.5px;
       }
       .r34-card-dl-btn.r34-status-downloaded {
-        background: rgba(0, 82, 51, 0.9);
+        background: rgba(0, 82, 51, 0.92);
         color: #57de9e;
         border-color: #57de9e;
       }
@@ -1108,7 +1112,6 @@
         color: #ffffff;
       }
 
-      /* 文件夹选择区域卡片 */
       .r34-folder-box {
         background: rgba(0, 0, 0, 0.35);
         border: 1px solid rgba(235, 178, 255, 0.25);
@@ -1255,9 +1258,8 @@
       const history = StorageManager.getHistory();
       const historyCount = Object.keys(history).length;
 
-      // 检查当前本地目录授权状态
       const hasNativePicker = typeof window.showDirectoryPicker === 'function';
-      const currentHandle = await DirectoryPickerManager.getSavedDirectoryHandle();
+      const currentHandle = await DirectoryPickerManager.getSavedDirectoryHandle(false);
       const folderDisplayName = currentHandle ? currentHandle.name : (settings.savedFolderName || '');
 
       const overlay = document.createElement('div');
@@ -1274,7 +1276,7 @@
           </div>
           <div class="r34-modal-body">
 
-            <!-- 目标文件夹选择 (File System Access) -->
+            <!-- 目标文件夹选择 -->
             <div class="r34-form-group">
               <label>📁 本地保存目标文件夹</label>
               <div class="r34-folder-box">
@@ -1376,7 +1378,6 @@
               </div>
             </div>
 
-            <!-- 其他选项 -->
             <div class="r34-form-group" style="gap: 10px; margin-top: 4px;">
               <label class="r34-checkbox-label">
                 <input type="checkbox" id="r34-save-meta" ${settings.saveMetadataJson ? 'checked' : ''}>
@@ -1388,7 +1389,6 @@
               </label>
             </div>
 
-            <!-- 历史记录概览 -->
             <div class="r34-form-group" style="padding: 10px 14px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px dashed rgba(226,226,226,0.15);">
               <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-size:12px; color:rgba(226,226,226,0.8);">📊 已记录已下载作品：<strong>${historyCount}</strong> 篇</span>
@@ -1419,7 +1419,6 @@
         if (e.target === overlay) close();
       });
 
-      // 文件夹选择器绑定
       const pickBtn = overlay.querySelector('#r34-pick-folder-btn');
       if (pickBtn) {
         pickBtn.onclick = async () => {
@@ -1451,7 +1450,6 @@
         };
       }
 
-      // 子目录快捷预设切换
       const presetSelect = overlay.querySelector('#r34-subfolder-preset');
       presetSelect.onchange = () => {
         if (presetSelect.value) {
@@ -1459,7 +1457,6 @@
         }
       };
 
-      // 变量快速追加
       overlay.querySelectorAll('.r34-tag-badge').forEach(badge => {
         badge.onclick = () => {
           const targetId = badge.getAttribute('data-target');
@@ -1472,7 +1469,6 @@
         };
       });
 
-      // 清空历史
       overlay.querySelector('#r34-clear-history').onclick = () => {
         if (confirm('确定清空所有已下载状态记录吗？清空后网格上的已下载标记将被重置。')) {
           StorageManager.clearHistory();
@@ -1482,7 +1478,6 @@
         }
       };
 
-      // 恢复默认
       overlay.querySelector('#r34-modal-reset').onclick = () => {
         if (confirm('确定恢复所有设置为默认吗？')) {
           StorageManager.saveSettings(DEFAULT_SETTINGS);
@@ -1491,7 +1486,6 @@
         }
       };
 
-      // 保存设置
       overlay.querySelector('#r34-modal-save').onclick = () => {
         const newSettings = Object.assign({}, settings, {
           subFolder: overlay.querySelector('#r34-subfolder').value.trim() || 'Rule34World',
@@ -1526,6 +1520,7 @@
     static init() {
       injectStyles();
       this.createFloatingActionButton();
+      this.bindGlobalEvents();
       this.observeDOM();
       this.scanAndInject();
 
@@ -1536,6 +1531,40 @@
       DownloadController.subscribe(() => {
         this.updateAllButtonStates();
       });
+    }
+
+    /**
+     * 全局事件委托拦截：防止 Angular 事件吞噬或 DOM 刷新脱离
+     */
+    static bindGlobalEvents() {
+      const handleDownloadClick = (e) => {
+        const targetBtn = e.target.closest('.r34-card-dl-btn, .r34-detail-dl-chip');
+        if (targetBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          const postId = targetBtn.getAttribute('data-post-id');
+          if (postId) {
+            DownloadController.startDownload(postId);
+          }
+        }
+      };
+
+      // 捕获阶段拦截点击与指针事件，彻底防止父级 <a> 标签跳转
+      document.addEventListener('click', handleDownloadClick, true);
+      document.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.r34-card-dl-btn, .r34-detail-dl-chip')) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      }, true);
+      document.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.r34-card-dl-btn, .r34-detail-dl-chip')) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      }, true);
     }
 
     static createFloatingActionButton() {
@@ -1562,7 +1591,7 @@
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           this.scanAndInject();
-        }, 150);
+        }, 120);
       });
 
       observer.observe(document.body, {
@@ -1571,8 +1600,19 @@
       });
 
       window.addEventListener('popstate', () => {
-        setTimeout(() => this.scanAndInject(), 200);
+        setTimeout(() => this.scanAndInject(), 150);
       });
+    }
+
+    static extractPostId(card) {
+      const dataId = card.getAttribute('data-post-id');
+      if (dataId && /^\d+$/.test(dataId.trim())) return dataId.trim();
+
+      const href = card.getAttribute('href') || '';
+      const match = href.match(/\/post\/(\d+)/);
+      if (match) return match[1];
+
+      return null;
     }
 
     static scanAndInject() {
@@ -1581,28 +1621,23 @@
     }
 
     static injectGridCardButtons() {
-      const cardLinks = document.querySelectorAll('a.box[data-post-id], a.box[href^="/post/"], a[href^="/post/"].box');
+      // 遍历所有可能的卡片容器
+      const cardLinks = document.querySelectorAll('a.box, a[href*="/post/"]');
 
       cardLinks.forEach(card => {
-        const postId = card.getAttribute('data-post-id') || (card.getAttribute('href') || '').replace('/post/', '').trim();
-        if (!postId || !/^\d+$/.test(postId)) return;
+        const postId = this.extractPostId(card);
+        if (!postId) return;
 
         const targetContainer = card.querySelector('.box-inner') || card;
         if (!targetContainer) return;
 
-        let btn = targetContainer.querySelector('.r34-card-dl-btn');
+        let btn = targetContainer.querySelector(`.r34-card-dl-btn[data-post-id="${postId}"]`);
         if (!btn) {
           btn = document.createElement('button');
           btn.className = 'r34-card-dl-btn';
           btn.setAttribute('data-post-id', postId);
           btn.setAttribute('type', 'button');
           btn.title = `下载 Post #${postId}`;
-
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            DownloadController.startDownload(postId);
-          });
 
           targetContainer.appendChild(btn);
         }
@@ -1618,18 +1653,12 @@
       const postId = match[1];
       const actionsContainer = document.querySelector('app-post-actions .con');
       if (actionsContainer) {
-        let chip = actionsContainer.querySelector('.r34-detail-dl-chip');
+        let chip = actionsContainer.querySelector(`.r34-detail-dl-chip[data-post-id="${postId}"]`);
         if (!chip) {
           chip = document.createElement('button');
           chip.className = 'r34-detail-dl-chip';
           chip.setAttribute('data-post-id', postId);
           chip.setAttribute('type', 'button');
-
-          chip.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            DownloadController.startDownload(postId);
-          });
 
           actionsContainer.insertBefore(chip, actionsContainer.firstChild);
         }
@@ -1712,7 +1741,7 @@
   function init() {
     DownloadController.init();
     UIController.init();
-    console.log(`[${SCRIPT_NAME}] v1.1.0 初始化就绪！`);
+    console.log(`[${SCRIPT_NAME}] v1.1.1 初始化就绪！`);
   }
 
   if (document.readyState === 'loading') {
