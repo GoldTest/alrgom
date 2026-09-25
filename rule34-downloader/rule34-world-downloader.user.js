@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Rule34.world 高级下载助手 (Rule34 World Downloader Pro)
 // @namespace    https://github.com/alrgom/rule34-downloader
-// @version      1.6.0
-// @description  为 rule34.world 提供列表网格与详情页一键下载、极简单列表批量下载面板、实时下载任务面板、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
+// @version      1.7.0
+// @description  为 rule34.world 提供列表网格与详情页一键下载、后台常驻批量下载、极简下载列表、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
 // @author       Mavis & Assistant
 // @match        https://rule34.world/*
 // @match        https://*.rule34.world/*
 // @icon         https://rule34.world/favicon.ico
+// @updateURL    https://raw.githubusercontent.com/GoldTest/alrgom/master/rule34-downloader/rule34-world-downloader.user.js
+// @downloadURL  https://raw.githubusercontent.com/GoldTest/alrgom/master/rule34-downloader/rule34-world-downloader.user.js
 // @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -1690,7 +1692,7 @@
         border-color: rgba(255, 255, 255, 0.15);
       }
 
-      /* 极简单列表 (Simplified Single List) */
+      /* 极简单列表 */
       .r34-simple-list-panel {
         background: rgba(0, 0, 0, 0.35);
         border: 1px solid rgba(235, 178, 255, 0.2);
@@ -1750,10 +1752,6 @@
         background: rgba(0, 82, 51, 0.45);
         color: #57de9e;
         border: 1px solid rgba(87, 222, 158, 0.3);
-      }
-      .r34-simple-status-tag.skipped {
-        background: rgba(255, 255, 255, 0.08);
-        color: rgba(226, 226, 226, 0.6);
       }
       .r34-simple-status-tag.pending {
         background: rgba(251, 192, 45, 0.15);
@@ -2013,7 +2011,7 @@
 
   /**
    * ==========================================
-   * 9. 极简单列表批量下载面板 Modal (Simplified Single List Batch Modal)
+   * 9. 极简单列表批量下载面板 Modal (支持后台常驻运行)
    * ==========================================
    */
 
@@ -2027,7 +2025,9 @@
       }
 
       const settings = StorageManager.getSettings();
-      const detectedTag = initialTag || UIController.getCurrentPageTag() || 'rwt4184';
+      const detectedTag = BatchDownloadManager.isRunning
+        ? BatchDownloadManager.currentTagName
+        : (initialTag || UIController.getCurrentPageTag() || 'rwt4184');
 
       this.overlay = document.createElement('div');
       this.overlay.className = 'r34-modal-overlay';
@@ -2039,7 +2039,7 @@
               <span class="material-icons" style="font-size:20px; color:#ebb2ff;">layers</span>
               Tag 批量多页下载
             </h2>
-            <button class="r34-modal-close-btn" id="r34-batch-close">✕</button>
+            <button class="r34-modal-close-btn" id="r34-batch-close" title="关闭面板 (下载将在后台继续)">✕</button>
           </div>
           <div class="r34-modal-body">
             <!-- Tag 输入与设置 -->
@@ -2090,7 +2090,7 @@
               </div>
             </div>
 
-            <!-- 极简单列表：下载列表 -->
+            <!-- 极简单列表：仅展示未跳过的排队/下载/完成条目 -->
             <div class="r34-simple-list-panel">
               <div class="r34-simple-list-header">
                 <span>📋 下载列表</span>
@@ -2109,7 +2109,7 @@
               <button class="r34-btn r34-btn-danger" id="r34-batch-stop" style="display:none;">终止下载</button>
             </div>
             <div style="display:flex; gap:8px;">
-              <button class="r34-btn r34-btn-secondary" id="r34-batch-cancel">关闭</button>
+              <button class="r34-btn r34-btn-secondary" id="r34-batch-cancel">关闭面板 (后台继续)</button>
               <button class="r34-btn r34-btn-primary" id="r34-batch-start">
                 <span class="material-icons" style="font-size:16px;">cloud_download</span>
                 开始批量下载
@@ -2121,15 +2121,19 @@
 
       document.body.appendChild(this.overlay);
 
-      const close = () => {
+      // 关闭面板：仅移除 UI 对话框，绝不终止后台下载！
+      const closeOnly = () => {
         if (this.overlay) {
           this.overlay.remove();
           this.overlay = null;
         }
       };
 
-      this.overlay.querySelector('#r34-batch-close').onclick = close;
-      this.overlay.querySelector('#r34-batch-cancel').onclick = close;
+      this.overlay.querySelector('#r34-batch-close').onclick = closeOnly;
+      this.overlay.querySelector('#r34-batch-cancel').onclick = closeOnly;
+      this.overlay.addEventListener('click', (e) => {
+        if (e.target === this.overlay) closeOnly();
+      });
 
       const startBtn = this.overlay.querySelector('#r34-batch-start');
       const pauseBtn = this.overlay.querySelector('#r34-batch-pause');
@@ -2139,12 +2143,39 @@
       const percentText = this.overlay.querySelector('#r34-batch-percent-text');
       const progressBar = this.overlay.querySelector('#r34-batch-progress-bar');
 
+      // 实时更新回调绑定
+      const progressListener = (prog) => {
+        if (!this.overlay) return;
+
+        if (prog.statusText) statusText.textContent = prog.statusText;
+
+        if (prog.totalCount > 0) {
+          const processed = (prog.completedCount || 0) + (prog.skippedCount || 0) + (prog.failedCount || 0);
+          const percent = Math.min(100, Math.floor((processed / prog.totalCount) * 100));
+          progressBar.style.width = `${percent}%`;
+          percentText.textContent = `${percent}% (${processed}/${prog.totalCount})`;
+        }
+
+        this.renderSimpleItemsList();
+
+        if (prog.phase === 'finished') {
+          startBtn.disabled = false;
+          tagInput.disabled = false;
+          pauseBtn.style.display = 'none';
+          stopBtn.style.display = 'none';
+        }
+      };
+
+      BatchDownloadManager.updateUiCallback = progressListener;
+
+      // 如果当前后台已有正在运行的任务，恢复显示
       if (BatchDownloadManager.isRunning) {
         startBtn.disabled = true;
         tagInput.disabled = true;
         pauseBtn.style.display = 'inline-flex';
         stopBtn.style.display = 'inline-flex';
-        this.renderSimpleItemsList();
+        pauseBtn.textContent = BatchDownloadManager.isPaused ? '继续' : '暂停';
+        BatchDownloadManager.notifyProgress();
       }
 
       pauseBtn.onclick = () => {
@@ -2157,6 +2188,7 @@
         }
       };
 
+      // 只有点击明确的“终止下载”，才停止后台任务
       stopBtn.onclick = () => {
         if (confirm('确定终止当前的批量下载任务吗？')) {
           BatchDownloadManager.stop();
@@ -2182,50 +2214,33 @@
           skipDownloaded: this.overlay.querySelector('#r34-batch-skip-downloaded').checked,
         };
 
-        await BatchDownloadManager.startBatchDownload(tagName, options, (prog) => {
-          if (!this.overlay) return;
-
-          if (prog.statusText) statusText.textContent = prog.statusText;
-
-          if (prog.totalCount > 0) {
-            const processed = (prog.completedCount || 0) + (prog.skippedCount || 0) + (prog.failedCount || 0);
-            const percent = Math.min(100, Math.floor((processed / prog.totalCount) * 100));
-            progressBar.style.width = `${percent}%`;
-            percentText.textContent = `${percent}% (${processed}/${prog.totalCount})`;
-          }
-
-          this.renderSimpleItemsList();
-
-          if (prog.phase === 'finished') {
-            startBtn.disabled = false;
-            tagInput.disabled = false;
-            pauseBtn.style.display = 'none';
-            stopBtn.style.display = 'none';
-          }
-        });
+        await BatchDownloadManager.startBatchDownload(tagName, options, progressListener);
       };
     }
 
     static renderSimpleItemsList() {
       if (!this.overlay) return;
 
-      const items = BatchDownloadManager.getBatchItems();
+      const allItems = BatchDownloadManager.getBatchItems();
+      // 过滤掉已跳过的项目，只展示排队/下载/完成/失败的实际项目
+      const visibleItems = allItems.filter(it => it.status !== 'skipped');
+
       const listContainer = this.overlay.querySelector('#r34-simple-items-container');
       const countSpan = this.overlay.querySelector('#r34-simple-list-count');
       if (!listContainer) return;
 
-      if (countSpan) countSpan.textContent = `共 ${items.length} 项`;
+      if (countSpan) countSpan.textContent = `共 ${visibleItems.length} 项 (已跳过已下载项)`;
 
-      if (items.length === 0) {
+      if (visibleItems.length === 0) {
         listContainer.innerHTML = `
           <div style="text-align:center; padding: 20px 0; color: rgba(226,226,226,0.4); font-size:12px;">
-            点击下方“开始批量下载”后，此处将列出下载内容与实时状态。
+            ${allItems.length === 0 ? '点击下方“开始批量下载”后，此处将列出下载内容与实时状态。' : '所有作品之前已全部下载完毕（已自动跳过）。'}
           </div>
         `;
         return;
       }
 
-      listContainer.innerHTML = items.map(item => {
+      listContainer.innerHTML = visibleItems.map(item => {
         let statusHtml = '';
         if (item.status === 'downloading') {
           statusHtml = `
@@ -2236,8 +2251,6 @@
           `;
         } else if (item.status === 'completed') {
           statusHtml = `<span class="r34-simple-status-tag completed"><span class="material-icons" style="font-size:12px;">check</span>已完成</span>`;
-        } else if (item.status === 'skipped') {
-          statusHtml = `<span class="r34-simple-status-tag skipped">已跳过</span>`;
         } else if (item.status === 'failed') {
           statusHtml = `<span class="r34-simple-status-tag failed" title="${escapeHtml(item.error || '失败')}">✕ 失败</span>`;
         } else {
@@ -2843,7 +2856,7 @@
   function init() {
     DownloadController.init();
     UIController.init();
-    console.log(`[${SCRIPT_NAME}] v1.6.0 (极简单列表版) 初始化就绪！`);
+    console.log(`[${SCRIPT_NAME}] v1.7.0 (自动更新+后台持续下载版) 初始化就绪！`);
   }
 
   if (document.readyState === 'loading') {
