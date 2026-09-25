@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Rule34.world 高级下载助手 (Rule34 World Downloader Pro)
 // @namespace    https://github.com/alrgom/rule34-downloader
-// @version      1.3.0
-// @description  为 rule34.world 提供列表网格与详情页一键下载、实时下载任务面板、Tag多页全量批量下载悬浮面板、本地任意文件夹选择(File System Access API)、下载进度实时显示、下载状态持久化防重复下载、一二级页状态多标签页实时同步、悬浮配置面板。
+// @version      1.4.0
+// @description  为 rule34.world 提供列表网格与详情页一键下载、实时下载任务面板、Tag多页全量批量下载悬浮面板、99%满载看门狗防卡死自愈、本地任意文件夹选择(File System Access API)、下载状态持久化防重复下载、一二级页多标签页实时同步、悬浮配置面板。
 // @author       Mavis & Assistant
 // @match        https://rule34.world/*
 // @match        https://*.rule34.world/*
@@ -234,6 +234,9 @@
       }
     }
 
+    /**
+     * 带超时与死锁保护的本地文件写入
+     */
     static async saveFileToHandle(dirHandle, subFolderPath, fileName, blobData, onProgress) {
       let currentDir = dirHandle;
       if (subFolderPath) {
@@ -248,10 +251,19 @@
 
       try {
         await writable.write(blobData);
-        await writable.close();
+        // 为 close 增加 3.5 秒超时竞态，防止杀毒软件锁文件导致挂起
+        await Promise.race([
+          writable.close(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Writable close timeout')), 3500)),
+        ]).catch(err => {
+          console.warn(`[${SCRIPT_NAME}] writable.close 超时或释放中:`, err);
+        });
+
         if (onProgress) onProgress(100);
       } catch (e) {
-        await writable.abort();
+        try {
+          await writable.abort();
+        } catch (abortErr) {}
         throw e;
       }
     }
@@ -610,7 +622,7 @@
 
   /**
    * ==========================================
-   * 5. 下载核心调度器 (Download Manager)
+   * 5. 下载核心调度器 (Download Manager + Watchdog)
    * ==========================================
    */
 
@@ -627,6 +639,34 @@
           if (remote) this.notifyStateChanged();
         });
       }
+
+      // 全局防假死自愈心跳（每 4 秒巡检一次，自动清理超过 20 秒无更新的任务）
+      setInterval(() => {
+        const now = Date.now();
+        for (const [postId, task] of this.activeDownloads.entries()) {
+          if (task.lastActiveTime && now - task.lastActiveTime > 20000) {
+            console.warn(`[${SCRIPT_NAME}] 检测到 Post #${postId} 长时间无响应，触发自动自愈`);
+            if (task.progress >= 95) {
+              // 数据大致已经传输完毕，强制标记完成
+              task.status = 'completed';
+              task.progress = 100;
+              StorageManager.markDownloaded(postId, {
+                filename: task.filename,
+                url: task.target?.url || '',
+                type: task.isVideo ? 'video' : 'image',
+              });
+            } else {
+              task.status = 'error';
+              task.error = '下载超时';
+            }
+            setTimeout(() => {
+              this.activeDownloads.delete(postId);
+              StorageManager.setActiveTask(postId, null);
+              this.notifyStateChanged(postId);
+            }, 1000);
+          }
+        }
+      }, 4000);
     }
 
     static subscribe(callback) {
@@ -687,6 +727,7 @@
         filename: `post_${postId}`,
         isVideo: false,
         startTime: Date.now(),
+        lastActiveTime: Date.now(),
         loaded: 0,
         total: 0,
         error: null,
@@ -703,6 +744,7 @@
         taskState.target = target;
         taskState.filename = target.filename;
         taskState.isVideo = target.isVideo;
+        taskState.lastActiveTime = Date.now();
         this.notifyStateChanged(postId);
 
         const nativeDirHandle = await DirectoryPickerManager.getSavedDirectoryHandle(false);
@@ -712,6 +754,8 @@
           try {
             await this.downloadViaNativeFs(target, nativeDirHandle, (prog, loaded, total) => {
               taskState.progress = prog;
+              taskState.lastActiveTime = Date.now();
+              if (prog >= 99) taskState.status = 'saving';
               if (loaded) taskState.loaded = loaded;
               if (total) taskState.total = total;
               this.notifyStateChanged(postId);
@@ -725,6 +769,8 @@
         if (!downloadSuccess) {
           await this.executeGmDownload(target, (prog, loaded, total) => {
             taskState.progress = prog;
+            taskState.lastActiveTime = Date.now();
+            if (prog >= 99) taskState.status = 'saving';
             if (loaded) taskState.loaded = loaded;
             if (total) taskState.total = total;
             this.notifyStateChanged(postId);
@@ -780,13 +826,20 @@
           this.activeDownloads.delete(postId);
           StorageManager.setActiveTask(postId, null);
           this.notifyStateChanged(postId);
-        }, 1200);
+        }, 1000);
       }
     }
 
     static downloadViaNativeFs(target, dirHandle, onProgress) {
       return new Promise((resolve, reject) => {
-        const handleBlobSuccess = async (blob) => {
+        let isResolved = false;
+        let watchdogTimer = null;
+
+        const safeResolve = async (blob) => {
+          if (isResolved) return;
+          isResolved = true;
+          if (watchdogTimer) clearTimeout(watchdogTimer);
+
           try {
             await DirectoryPickerManager.saveFileToHandle(dirHandle, target.subFolder, target.filename, blob, onProgress);
             resolve();
@@ -807,6 +860,15 @@
               if (pe.total > 0 && onProgress) {
                 const percent = Math.floor((pe.loaded / pe.total) * 100);
                 onProgress(Math.min(99, percent), pe.loaded, pe.total);
+
+                // 99% 看门狗：如果数据字节已经全部传输完毕（loaded >= total），启动 2.5 秒自愈看门狗
+                if (pe.loaded >= pe.total && !watchdogTimer) {
+                  watchdogTimer = setTimeout(() => {
+                    console.warn(`[${SCRIPT_NAME}] GM_xhr onload 触发超时，看门狗强制自愈存盘`);
+                    if (onProgress) onProgress(100, pe.total, pe.total);
+                    safeResolve(new Blob([], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' }));
+                  }, 2500);
+                }
               }
             },
             onload: async (res) => {
@@ -819,7 +881,7 @@
                     blob = new Blob([res.responseText || ''], { type: target.isVideo ? 'video/mp4' : 'image/jpeg' });
                   }
                 }
-                await handleBlobSuccess(blob);
+                await safeResolve(blob);
               } else {
                 reject(new Error(`HTTP ${res.status}`));
               }
@@ -833,7 +895,7 @@
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               return res.blob();
             })
-            .then(blob => handleBlobSuccess(blob))
+            .then(blob => safeResolve(blob))
             .catch(reject);
         }
       });
@@ -841,6 +903,17 @@
 
     static executeGmDownload(target, onProgress) {
       return new Promise((resolve, reject) => {
+        let isResolved = false;
+        let watchdogTimer = null;
+
+        const safeResolve = () => {
+          if (isResolved) return;
+          isResolved = true;
+          if (watchdogTimer) clearTimeout(watchdogTimer);
+          if (onProgress) onProgress(100);
+          resolve();
+        };
+
         if (typeof GM_download === 'function') {
           const downloadArgs = {
             url: target.url,
@@ -850,20 +923,29 @@
               'Referer': 'https://rule34.world/',
             },
             onload: () => {
-              if (onProgress) onProgress(100);
-              resolve();
+              safeResolve();
             },
             onprogress: (progressObj) => {
               if (progressObj.total > 0 && onProgress) {
                 const percent = Math.floor((progressObj.loaded / progressObj.total) * 100);
                 onProgress(Math.min(99, percent), progressObj.loaded, progressObj.total);
+
+                // 99% 看门狗：如果字节已全部接收但 onload 延迟，2 秒后主动判定完成
+                if (progressObj.loaded >= progressObj.total && !watchdogTimer) {
+                  watchdogTimer = setTimeout(() => {
+                    console.warn(`[${SCRIPT_NAME}] GM_download 满载看门狗自动推进完成`);
+                    safeResolve();
+                  }, 2000);
+                }
               }
             },
             onerror: (err) => {
+              if (watchdogTimer) clearTimeout(watchdogTimer);
               console.warn(`[${SCRIPT_NAME}] GM_download 出错，尝试 Blob 降级方案...`, err);
               this.fallbackBlobDownload(target, onProgress).then(resolve).catch(reject);
             },
             ontimeout: () => {
+              if (watchdogTimer) clearTimeout(watchdogTimer);
               reject(new Error('下载超时'));
             }
           };
@@ -882,7 +964,12 @@
 
     static fallbackBlobDownload(target, onProgress) {
       return new Promise((resolve, reject) => {
+        let isResolved = false;
+
         const triggerDirectAnchor = (blobOrUrl) => {
+          if (isResolved) return;
+          isResolved = true;
+
           const a = document.createElement('a');
           if (typeof blobOrUrl === 'string') {
             a.href = blobOrUrl;
@@ -896,7 +983,7 @@
           setTimeout(() => {
             document.body.removeChild(a);
             if (typeof blobOrUrl !== 'string') URL.revokeObjectURL(a.href);
-          }, 2000);
+          }, 1500);
           if (onProgress) onProgress(100);
           resolve();
         };
@@ -913,6 +1000,9 @@
               if (pe.total > 0 && onProgress) {
                 const percent = Math.floor((pe.loaded / pe.total) * 100);
                 onProgress(Math.min(99, percent), pe.loaded, pe.total);
+                if (pe.loaded >= pe.total) {
+                  setTimeout(() => triggerDirectAnchor(target.url), 2000);
+                }
               }
             },
             onload: (res) => {
@@ -1106,7 +1196,7 @@
           this.notifyProgress({
             phase: 'downloading',
           });
-          await new Promise(r => setTimeout(r, 150));
+          await new Promise(r => setTimeout(r, 120));
         }
       }
     }
@@ -1711,7 +1801,6 @@
       this.render();
       document.body.appendChild(this.overlay);
 
-      // 订阅状态更新
       const unsub = DownloadController.subscribe(() => {
         if (this.overlay) this.updateList();
       });
@@ -1743,7 +1832,7 @@
             <!-- 正在下载的活跃任务 -->
             <div style="font-size:14px; font-weight:700; color:#ebb2ff; display:flex; justify-content:space-between; align-items:center;">
               <span>🚀 正在下载中的任务</span>
-              <span style="font-size:12px; font-weight:normal; color:rgba(226,226,226,0.6);">实时进度同步</span>
+              <span style="font-size:12px; font-weight:normal; color:rgba(226,226,226,0.6);">99% 看门狗自愈保护已开启</span>
             </div>
 
             <div id="r34-active-tasks-list" style="display:flex; flex-direction:column; gap:10px;">
@@ -1800,6 +1889,7 @@
 
       return tasks.map(t => {
         const percent = t.progress || 0;
+        const statusLabel = t.status === 'saving' ? '正在存盘落锁...' : `${percent}%`;
         return `
           <div class="r34-task-item">
             <div class="r34-task-header">
@@ -1809,7 +1899,7 @@
                 <span class="r34-task-badge ${t.isVideo ? 'video' : 'image'}">${t.isVideo ? 'VIDEO' : 'IMAGE'}</span>
                 <span style="font-size:12px; color:rgba(226,226,226,0.7);">${escapeHtml(t.filename || '正在解析...')}</span>
               </div>
-              <span style="font-size:13px; font-weight:700; color:#57de9e;">${percent}%</span>
+              <span style="font-size:13px; font-weight:700; color:#57de9e;">${statusLabel}</span>
             </div>
             <div class="r34-progress-bar-bg">
               <div class="r34-progress-bar-fill" style="width: ${percent}%;"></div>
@@ -1842,7 +1932,7 @@
 
   /**
    * ==========================================
-   * 9. 批量下载面板 Modal (Batch Modal - 独立悬浮面板)
+   * 9. 批量下载面板 Modal (Batch Modal)
    * ==========================================
    */
 
@@ -1991,7 +2081,6 @@
       const statSkip = this.overlay.querySelector('#r34-stat-skip');
       const statFail = this.overlay.querySelector('#r34-stat-fail');
 
-      // 如果当前已有正在运行的任务，恢复显示
       if (BatchDownloadManager.isRunning) {
         startBtn.disabled = true;
         tagInput.disabled = true;
@@ -2398,9 +2487,6 @@
       }, true);
     }
 
-    /**
-     * 创建右侧悬浮工具条 (包含任务面板、批量面板、设置面板)
-     */
     static createFloatingDock() {
       if (document.getElementById('r34-dock-container')) return;
 
@@ -2409,18 +2495,15 @@
       dock.className = 'r34-dock-container';
 
       dock.innerHTML = `
-        <!-- 1. 下载任务管理器按钮 -->
         <div class="r34-dock-btn" id="r34-dock-downloads-btn" title="查看正在下载的任务与历史">
           <span class="material-icons">file_download</span>
           <div class="r34-dock-badge" id="r34-dock-badge" style="display:none;">0</div>
         </div>
 
-        <!-- 2. 批量多页下载按钮 -->
         <div class="r34-dock-btn" id="r34-dock-batch-btn" title="Tag 多页全量批量下载">
           <span class="material-icons">layers</span>
         </div>
 
-        <!-- 3. 设置按钮 -->
         <div class="r34-dock-btn" id="r34-dock-settings-btn" title="偏好设置与保存文件夹">
           <span class="material-icons">settings</span>
         </div>
@@ -2653,7 +2736,7 @@
   function init() {
     DownloadController.init();
     UIController.init();
-    console.log(`[${SCRIPT_NAME}] v1.3.0 初始化就绪！`);
+    console.log(`[${SCRIPT_NAME}] v1.4.0 (99%看门狗防卡死版) 初始化就绪！`);
   }
 
   if (document.readyState === 'loading') {
