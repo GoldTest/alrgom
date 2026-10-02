@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Rule34Video 快速下载
 // @namespace    https://github.com/GoldTest/alrgom
-// @version      1.0.0
-// @description  在视频卡片上添加快速下载按钮，点击后自动抓取详情页下载链接并触发下载。右下角提供配置面板（默认画质选择）。
+// @version      1.1.0
+// @description  在视频卡片上添加快速下载按钮，下载后持久化标记"已下载"状态。右下角提供配置面板。
 // @author       GoldTest
 // @match        https://rule34video.com/*
 // @grant        GM_xmlhttpRequest
@@ -20,11 +20,53 @@
   /* ─────────────────────────────────────────
      配置键 & 默认值
   ───────────────────────────────────────── */
-  const CFG_QUALITY = 'r34dl_quality'; // 'highest' | 'lowest' | index(0,1,2…)
-  const CFG_PANEL   = 'r34dl_panel';   // 面板展开状态
+  const CFG_QUALITY    = 'r34dl_quality';   // 'highest' | 'lowest' | index(0,1,2…)
+  const CFG_PANEL      = 'r34dl_panel';     // 面板展开状态
+  const CFG_DOWNLOADED = 'r34dl_downloaded'; // JSON 数组，存已下载视频 ID
 
   function getQuality()  { return GM_getValue(CFG_QUALITY, 'highest'); }
   function getPanelOpen(){ return GM_getValue(CFG_PANEL,   true);      }
+
+  /* ─────────────────────────────────────────
+     已下载记录：操作封装
+     存储格式：{ "123456": timestamp, … }
+  ───────────────────────────────────────── */
+  function loadDownloaded() {
+    try {
+      return JSON.parse(GM_getValue(CFG_DOWNLOADED, '{}'));
+    } catch (_) { return {}; }
+  }
+  function saveDownloaded(map) {
+    GM_setValue(CFG_DOWNLOADED, JSON.stringify(map));
+  }
+  function markDownloaded(videoId) {
+    const map = loadDownloaded();
+    map[videoId] = Date.now();
+    saveDownloaded(map);
+    refreshPanelCount(); // 同步面板计数
+  }
+  function isDownloaded(videoId) {
+    return videoId && (videoId in loadDownloaded());
+  }
+  function clearAllDownloaded() {
+    saveDownloaded({});
+    refreshPanelCount();
+    // 重置当前页已标记按钮
+    document.querySelectorAll('.r34dl-btn.r34dl-done').forEach(btn => {
+      btn.classList.remove('r34dl-done');
+      btn.textContent = btn.dataset.origText;
+      btn.title = btn.dataset.origTitle || '';
+    });
+  }
+  function downloadedCount() {
+    return Object.keys(loadDownloaded()).length;
+  }
+
+  /** 从视频详情页 URL 中提取纯数字 ID */
+  function extractVideoId(url) {
+    const m = url.match(/\/videos\/(\d+)/);
+    return m ? m[1] : null;
+  }
 
   /* ─────────────────────────────────────────
      注入样式
@@ -52,8 +94,23 @@
       opacity: 1;
       pointer-events: auto;
     }
+    /* 已下载时封面左上角角标始终可见 */
+    .r34dl-badge {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      background: rgba(22,160,60,.9);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 3px;
+      z-index: 11;
+      pointer-events: none;
+      letter-spacing: .3px;
+    }
 
-    /* ── 单个下载按钮 ── */
+    /* ── 通用按钮 ── */
     .r34dl-btn {
       display: inline-flex;
       align-items: center;
@@ -76,11 +133,23 @@
     .r34dl-btn.success { background: rgba(30,160,30,.85); }
     .r34dl-btn.error   { background: rgba(180,30,30,.85); }
 
-    /* 快速下载按钮（仅一个） */
+    /* 快速下载按钮（默认蓝） */
     .r34dl-quick {
       background: rgba(30,120,220,.85);
     }
     .r34dl-quick:hover { background: #1e78dc; }
+
+    /* 已下载状态：绿色，hover 变"重新下载" */
+    .r34dl-btn.r34dl-done {
+      background: rgba(22,160,60,.85);
+    }
+    .r34dl-btn.r34dl-done:hover {
+      background: rgba(22,140,50,.95);
+    }
+    /* hover 时把文字切换为"重新下载" ——用 CSS content 实现无 JS 的文字切换 */
+    .r34dl-btn.r34dl-done::before { content: attr(data-done-text); }
+    .r34dl-btn.r34dl-done:hover::before { content: attr(data-rehover-text); }
+    .r34dl-btn.r34dl-done > span { display: none; }
 
     /* ── 配置面板 ── */
     #r34dl-panel {
@@ -118,7 +187,7 @@
       border-radius: 10px;
       padding: 14px 16px;
       margin-bottom: 8px;
-      min-width: 220px;
+      min-width: 230px;
       box-shadow: 0 4px 20px rgba(0,0,0,.6);
     }
     #r34dl-panel-body h3 {
@@ -135,7 +204,7 @@
       margin-bottom: 8px;
       gap: 8px;
     }
-    .r34dl-row label { color: #ccc; font-size: 12px; }
+    .r34dl-row label { color: #ccc; font-size: 12px; flex-shrink: 0; }
     .r34dl-row select, .r34dl-row input {
       background: #333;
       border: 1px solid #555;
@@ -145,32 +214,38 @@
       font-size: 12px;
       cursor: pointer;
     }
+    #r34dl-clear-btn {
+      background: #7a2020;
+      color: #fbb;
+      border: none;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    #r34dl-clear-btn:hover { background: #a02020; }
     .r34dl-tip {
       font-size: 11px;
       color: #777;
       margin-top: 8px;
       line-height: 1.4;
     }
-    .r34dl-tip a { color: #aaa; }
   `);
 
   /* ─────────────────────────────────────────
-     工具：从详情页 HTML 中提取下载链接列表
-     详情页下载区：<div class="content-more-download"> 或 <div class="download_links">
-     每个链接形如: <a href="...mp4" class="...">1080p</a>
+     工具：从详情页 HTML 提取下载链接列表
   ───────────────────────────────────────── */
   function parseDownloadLinks(html) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
 
-    // 先尝试已知的下载区选择器
     const selectors = [
       '.content-more-download a[href]',
       '.download-links a[href]',
       '.download_links a[href]',
       'a.tag_btn[href*=".mp4"]',
       'a[href*=".mp4"][download]',
-      // 通用 fallback: 所有指向 .mp4/.m3u8 的链接
       'a[href$=".mp4"]',
     ];
 
@@ -189,7 +264,6 @@
       }
     }
 
-    // 去重
     const seen = new Set();
     links = links.filter(l => {
       if (seen.has(l.href)) return false;
@@ -197,7 +271,7 @@
       return true;
     });
 
-    return links; // [{href, label}, …]  按页面顺序（通常高→低画质）
+    return links;
   }
 
   /* ─────────────────────────────────────────
@@ -226,10 +300,14 @@
     requestAnimationFrame(() => a.remove());
   }
 
+  function sanitizeFilename(s) {
+    return s.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
+  }
+
   /* ─────────────────────────────────────────
-     核心：抓取详情页 → 解析 → 下载
+     核心：抓取详情页 → 解析 → 下载 → 标记
   ───────────────────────────────────────── */
-  function fetchAndDownload(videoUrl, btn, title) {
+  function fetchAndDownload(videoUrl, btn, title, videoId) {
     btn.classList.add('loading');
     btn.textContent = '⏳';
 
@@ -246,11 +324,24 @@
           return;
         }
         const chosen = pickLink(links);
-        btn.classList.remove('loading');
-        btn.classList.add('success');
-        btn.textContent = '✅ 下载中';
         triggerDownload(chosen.href, title ? sanitizeFilename(title) + '.mp4' : '');
-        setTimeout(() => resetBtn(btn), 3000);
+
+        // 标记已下载
+        if (videoId) {
+          markDownloaded(videoId);
+          // 立即将按钮切换为"已下载"状态
+          applyDoneState(btn, videoId);
+          // 角标（如果还没有则补上）
+          const wrap = btn.closest('.r34dl-overlay')?.parentElement;
+          if (wrap && !wrap.querySelector('.r34dl-badge')) {
+            addBadge(wrap);
+          }
+        } else {
+          btn.classList.remove('loading');
+          btn.classList.add('success');
+          btn.textContent = '✅ 下载中';
+          setTimeout(() => resetBtn(btn), 3000);
+        }
       },
       onerror() {
         btn.classList.remove('loading');
@@ -261,23 +352,46 @@
     });
   }
 
-  function resetBtn(btn) {
-    btn.classList.remove('loading', 'success', 'error');
-    btn.textContent = btn.dataset.origText || '⬇ 下载';
+  /** 将按钮切换为"已下载"持久态 */
+  function applyDoneState(btn, videoId) {
+    btn.classList.remove('loading', 'success', 'error', 'r34dl-quick');
+    btn.classList.add('r34dl-done');
+    // 用 data 属性控制 CSS ::before 内容，不再依赖 textContent
+    btn.dataset.doneText    = '✅ 已下载';
+    btn.dataset.rehoverText = '🔁 重新下载';
+    btn.textContent = ''; // 文字由 ::before 接管
+    btn.dataset.videoId = videoId;
+
+    // 更新 title（显示下载时间）
+    const map = loadDownloaded();
+    const ts = map[videoId];
+    if (ts) {
+      const d = new Date(ts);
+      btn.title = `已下载于 ${d.toLocaleDateString()} ${d.toLocaleTimeString()}（点击重新下载）`;
+    }
   }
 
-  function sanitizeFilename(s) {
-    return s.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100);
+  /** 恢复按钮到初始蓝色状态（仅用于出错情况） */
+  function resetBtn(btn) {
+    btn.classList.remove('loading', 'success', 'error');
+    // 若是已下载态，不要重置
+    if (!btn.classList.contains('r34dl-done')) {
+      btn.textContent = btn.dataset.origText || '⬇ 快速下载';
+    }
+  }
+
+  /** 在图片容器左上角插入已下载角标 */
+  function addBadge(imgWrap) {
+    const badge = document.createElement('div');
+    badge.className = 'r34dl-badge';
+    badge.textContent = '✓ 已下载';
+    imgWrap.appendChild(badge);
   }
 
   /* ─────────────────────────────────────────
      在视频卡片上注入按钮
-     站点卡片结构（实际）：
-       .thumb-block  > (a.thumb > img) + (div.thumb-block-meta) + …
-       li.pcVideoListItem > div.thumb-block > …
   ───────────────────────────────────────── */
   function injectCardButtons() {
-    // 命中各种可能的视频卡片容器
     const cards = document.querySelectorAll(
       '.thumb-block:not([data-r34dl]), li.pcVideoListItem:not([data-r34dl])'
     );
@@ -285,39 +399,53 @@
     cards.forEach(card => {
       card.setAttribute('data-r34dl', '1');
 
-      // 找视频详情页链接
       const linkEl = card.querySelector('a[href*="/videos/"]');
       if (!linkEl) return;
       const videoUrl = linkEl.href;
+      const videoId  = extractVideoId(videoUrl);
 
-      // 找标题
       const titleEl = card.querySelector('.thumb-block-title a, .title a, a[title]');
       const title = titleEl ? (titleEl.textContent || titleEl.getAttribute('title') || '').trim() : '';
 
-      // 找合适的图片容器（覆盖层依附在此）
       let imgWrap = card.querySelector('a.thumb, .thumb, a[class*="thumb"]');
       if (!imgWrap) imgWrap = card.querySelector('a');
       if (!imgWrap) return;
 
-      // 保证相对定位
       if (getComputedStyle(imgWrap).position === 'static') {
         imgWrap.style.position = 'relative';
+      }
+
+      const alreadyDone = isDownloaded(videoId);
+
+      // 角标：已下载时始终可见
+      if (alreadyDone) {
+        addBadge(imgWrap);
       }
 
       // 覆盖层
       const overlay = document.createElement('div');
       overlay.className = 'r34dl-overlay';
 
-      // 快速下载按钮（按配置画质）
+      // 快速下载按钮
       const quickBtn = document.createElement('button');
-      quickBtn.className = 'r34dl-btn r34dl-quick';
-      quickBtn.textContent = '⬇ 快速下载';
-      quickBtn.dataset.origText = quickBtn.textContent;
-      quickBtn.title = `按配置画质下载（当前：${getQuality()}）`;
+      quickBtn.className = 'r34dl-btn';
+      quickBtn.dataset.origText  = '⬇ 快速下载';
+      quickBtn.dataset.origTitle = `按配置画质下载（当前：${getQuality()}）`;
+
+      if (alreadyDone) {
+        quickBtn.classList.add('r34dl-done');
+        applyDoneState(quickBtn, videoId);
+      } else {
+        quickBtn.classList.add('r34dl-quick');
+        quickBtn.textContent = '⬇ 快速下载';
+        quickBtn.title = quickBtn.dataset.origTitle;
+      }
+
       quickBtn.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
-        fetchAndDownload(videoUrl, quickBtn, title);
+        // 不管是否已下载，都允许重新下载
+        fetchAndDownload(videoUrl, quickBtn, title, videoId);
       });
 
       overlay.appendChild(quickBtn);
@@ -326,28 +454,45 @@
   }
 
   /* ─────────────────────────────────────────
-     在详情页上也可以加强：将下载按钮区高亮提示
-     （可选，不干扰用户；本脚本主要功能在列表页）
+     详情页增强（高亮下载区 + 已下载提示）
   ───────────────────────────────────────── */
   function enhanceDetailPage() {
-    // 只在 /videos/ 详情页执行
     if (!/\/videos\/\d+\//.test(location.pathname)) return;
 
-    const dlArea = document.querySelector(
+    const videoId = extractVideoId(location.pathname);
+    const dlArea  = document.querySelector(
       '.content-more-download, .download-links, .download_links'
     );
     if (!dlArea) return;
 
-    dlArea.style.cssText += 'border: 2px solid #d1404a; border-radius: 6px; padding: 8px;';
+    const done = isDownloaded(videoId);
+    const borderColor = done ? '#16a03c' : '#d1404a';
+    dlArea.style.cssText += `border: 2px solid ${borderColor}; border-radius: 6px; padding: 8px;`;
+
     const tip = document.createElement('div');
-    tip.style.cssText = 'font-size:11px;color:#d1404a;margin-bottom:4px;';
-    tip.textContent = '▼ R34 Downloader 脚本已识别到以下下载链接';
+    tip.style.cssText = `font-size:11px;color:${borderColor};margin-bottom:4px;`;
+    if (done) {
+      const map = loadDownloaded();
+      const ts  = map[videoId];
+      const d   = ts ? new Date(ts) : null;
+      tip.textContent = `✅ R34 Downloader：此视频已下载（${d ? d.toLocaleDateString() + ' ' + d.toLocaleTimeString() : ''}）`;
+    } else {
+      tip.textContent = '▼ R34 Downloader 脚本已识别到以下下载链接';
+    }
     dlArea.insertBefore(tip, dlArea.firstChild);
   }
 
   /* ─────────────────────────────────────────
      配置面板
   ───────────────────────────────────────── */
+  let panelCountEl = null; // 用于动态更新计数
+
+  function refreshPanelCount() {
+    if (panelCountEl) {
+      panelCountEl.textContent = downloadedCount();
+    }
+  }
+
   function buildPanel() {
     const panel = document.createElement('div');
     panel.id = 'r34dl-panel';
@@ -367,10 +512,14 @@
           <option value="3">第 4 项</option>
         </select>
       </div>
+      <div class="r34dl-row">
+        <label>已下载记录 <b id="r34dl-count">0</b> 条</label>
+        <button id="r34dl-clear-btn" title="清空所有已下载标记（不删除本地文件）">清空记录</button>
+      </div>
       <div class="r34dl-tip">
-        · 点击视频卡片上的 <b>⬇ 快速下载</b> 按钮触发下载。<br>
-        · 脚本会自动抓取详情页选择画质后下载。<br>
-        · "第 N 项" = 详情页下载列表第 N 个（通常按画质从高到低排列）。
+        · 悬浮卡片显示 <b>⬇ 快速下载</b>，下载后变绿并加角标。<br>
+        · 绿色按钮悬浮变 🔁 可重新下载。<br>
+        · 记录仅存于浏览器本地，清空不删文件。
       </div>
     `;
 
@@ -386,19 +535,30 @@
     panel.appendChild(toggle);
     document.body.appendChild(panel);
 
-    // 初始化状态
+    // 初始化
     const isOpen = getPanelOpen();
     body.style.display = isOpen ? 'block' : 'none';
 
-    // 恢复画质选择
+    // 画质选择
     const sel = document.getElementById('r34dl-quality-sel');
     sel.value = getQuality();
     sel.addEventListener('change', () => {
       GM_setValue(CFG_QUALITY, sel.value);
-      // 更新所有快速按钮 title
       document.querySelectorAll('.r34dl-quick').forEach(b => {
         b.title = `按配置画质下载（当前：${sel.value}）`;
+        b.dataset.origTitle = b.title;
       });
+    });
+
+    // 已下载计数
+    panelCountEl = document.getElementById('r34dl-count');
+    refreshPanelCount();
+
+    // 清空按钮
+    document.getElementById('r34dl-clear-btn').addEventListener('click', () => {
+      if (confirm(`确定清空全部 ${downloadedCount()} 条已下载记录吗？\n（不会删除本地文件）`)) {
+        clearAllDownloaded();
+      }
     });
 
     // 展开/收起
