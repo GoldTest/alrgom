@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Rule34Video 快速下载
 // @namespace    https://github.com/GoldTest/alrgom
-// @version      1.2.0
-// @description  在视频卡片上添加快速下载按钮，下载后持久化标记"已下载"状态。右下角提供配置面板。
+// @version      1.3.0
+// @description  在视频卡片上固定显示下载按钮，下载后持久化标记"已下载"。右下角配置面板。
 // @author       GoldTest
 // @match        https://rule34video.com/*
 // @grant        GM_xmlhttpRequest
@@ -18,7 +18,7 @@
   'use strict';
 
   /* ─────────────────────────────────────────
-     配置键 & 默认值
+     配置
   ───────────────────────────────────────── */
   const CFG_QUALITY    = 'r34dl_quality';
   const CFG_PANEL      = 'r34dl_panel';
@@ -35,100 +35,115 @@
   }
   function saveDownloaded(map) { GM_setValue(CFG_DOWNLOADED, JSON.stringify(map)); }
   function markDownloaded(id) {
-    const map = loadDownloaded(); map[id] = Date.now(); saveDownloaded(map); refreshPanelCount();
+    const map = loadDownloaded();
+    map[id] = Date.now();
+    saveDownloaded(map);
+    refreshPanelCount();
   }
-  function isDownloaded(id)   { return id && (id in loadDownloaded()); }
+  function isDownloaded(id) { return id && (id in loadDownloaded()); }
   function clearAllDownloaded() {
-    saveDownloaded({}); refreshPanelCount();
-    document.querySelectorAll('.r34dl-btn.r34dl-done').forEach(b => {
-      b.classList.remove('r34dl-done');
-      b.classList.add('r34dl-quick');
-      b.textContent = b.dataset.origText || '⬇ 快速下载';
+    saveDownloaded({});
+    refreshPanelCount();
+    // 重置页面上所有已标记的按钮
+    document.querySelectorAll('.r34dl-btn.r34dl-done').forEach(btn => {
+      btn.classList.remove('r34dl-done');
+      btn.classList.add('r34dl-quick');
+      btn.textContent = '⬇ 下载';
     });
     document.querySelectorAll('.r34dl-badge').forEach(b => b.remove());
   }
   function downloadedCount() { return Object.keys(loadDownloaded()).length; }
-  function extractVideoId(url) { const m = String(url).match(/\/videos\/(\d+)/); return m ? m[1] : null; }
+
+  /** 从 /video/{id}/ 或 /video/{id}/slug/ 中提取纯数字 ID */
+  function extractVideoId(url) {
+    const m = String(url).match(/\/video\/(\d+)/);
+    return m ? m[1] : null;
+  }
 
   /* ─────────────────────────────────────────
      样式
   ───────────────────────────────────────── */
   function injectStyles() {
     GM_addStyle(`
-      /* ── 覆盖层（默认隐藏，hover 显示）── */
-      .r34dl-overlay {
+      /* ── 按钮容器：固定在封面左下角 ── */
+      .r34dl-wrap {
         position: absolute !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        padding: 5px 6px !important;
-        background: linear-gradient(transparent, rgba(0,0,0,.8)) !important;
-        display: flex !important;
-        gap: 4px !important;
-        flex-wrap: wrap !important;
+        bottom: 4px !important;
+        left: 4px !important;
         z-index: 9999 !important;
-        opacity: 0 !important;
-        transition: opacity .18s !important;
-        pointer-events: none !important;
-      }
-      /* 触发父容器 hover 时显示 */
-      [data-r34dl]:hover .r34dl-overlay {
-        opacity: 1 !important;
+        display: flex !important;
+        gap: 3px !important;
         pointer-events: auto !important;
-      }
-
-      /* ── 角标（始终可见）── */
-      .r34dl-badge {
-        position: absolute !important;
-        top: 5px !important;
-        left: 5px !important;
-        background: rgba(22,160,60,.92) !important;
-        color: #fff !important;
-        font-size: 10px !important;
-        font-weight: 700 !important;
-        padding: 2px 5px !important;
-        border-radius: 3px !important;
-        z-index: 10000 !important;
-        pointer-events: none !important;
-        letter-spacing: .3px !important;
-        font-family: Arial, sans-serif !important;
-        line-height: 1.4 !important;
       }
 
       /* ── 按钮基础 ── */
       .r34dl-btn {
         display: inline-flex !important;
         align-items: center !important;
-        gap: 3px !important;
-        padding: 4px 8px !important;
+        padding: 3px 7px !important;
         border-radius: 4px !important;
         border: none !important;
         cursor: pointer !important;
         font-size: 11px !important;
         font-weight: 700 !important;
         font-family: Arial, sans-serif !important;
-        line-height: 1 !important;
+        line-height: 1.3 !important;
         color: #fff !important;
-        background: rgba(30,120,220,.9) !important;
-        transition: background .15s, transform .1s !important;
         white-space: nowrap !important;
         text-shadow: none !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,.4) !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,.6) !important;
+        transition: opacity .15s, transform .1s !important;
+        opacity: .92 !important;
       }
-      .r34dl-btn:hover  { background: #1e6fdc !important; transform: scale(1.05) !important; }
+      .r34dl-btn:hover  { opacity: 1 !important; transform: scale(1.05) !important; }
       .r34dl-btn:active { transform: scale(.97) !important; }
-      .r34dl-btn.loading { background: rgba(100,100,100,.85) !important; cursor: wait !important; }
-      .r34dl-btn.dl-err  { background: rgba(180,30,30,.9) !important; }
 
-      /* 已下载：绿色；hover 切换文字为"重新下载" */
+      /* 蓝色 = 可下载 */
+      .r34dl-btn.r34dl-quick {
+        background: rgba(24,112,210,.9) !important;
+      }
+      .r34dl-btn.r34dl-quick:hover { background: #1870d2 !important; }
+
+      /* 加载中 */
+      .r34dl-btn.loading {
+        background: rgba(90,90,90,.85) !important;
+        cursor: wait !important;
+      }
+
+      /* 已下载：绿色；hover 变"重新下载" */
       .r34dl-btn.r34dl-done {
-        background: rgba(22,160,60,.9) !important;
+        background: rgba(22,155,58,.9) !important;
       }
-      .r34dl-btn.r34dl-done:hover {
-        background: rgba(15,130,45,.95) !important;
-      }
+      .r34dl-btn.r34dl-done:hover { background: rgba(16,130,45,.95) !important; }
       .r34dl-btn.r34dl-done::before { content: attr(data-done-label) !important; }
       .r34dl-btn.r34dl-done:hover::before { content: '🔁 重新下载' !important; }
+
+      /* 失败 */
+      .r34dl-btn.dl-err { background: rgba(175,30,30,.9) !important; }
+
+      /* ── 角标（左上角，常驻可见）── */
+      .r34dl-badge {
+        position: absolute !important;
+        top: 4px !important;
+        left: 4px !important;
+        background: rgba(22,155,58,.92) !important;
+        color: #fff !important;
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        font-family: Arial, sans-serif !important;
+        padding: 2px 5px !important;
+        border-radius: 3px !important;
+        z-index: 10000 !important;
+        pointer-events: none !important;
+        line-height: 1.4 !important;
+        letter-spacing: .3px !important;
+      }
+
+      /* 已下载时角标让位，按钮放右下 */
+      .r34dl-badge ~ .r34dl-wrap {
+        bottom: 4px !important;
+        left: 4px !important;
+      }
 
       /* ── 配置面板 ── */
       #r34dl-panel {
@@ -141,7 +156,12 @@
         color: #eee !important;
         user-select: none !important;
       }
-      #r34dl-panel-toggle { display: flex; align-items: center; justify-content: flex-end; cursor: pointer; }
+      #r34dl-panel-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        cursor: pointer;
+      }
       #r34dl-panel-icon {
         width: 38px; height: 38px; border-radius: 50%;
         background: #d1404a; display: flex; align-items: center; justify-content: center;
@@ -150,16 +170,30 @@
       #r34dl-panel-icon:hover { transform: scale(1.1); }
       #r34dl-panel-body {
         background: rgba(20,20,30,.95); border: 1px solid #444; border-radius: 10px;
-        padding: 14px 16px; margin-bottom: 8px; min-width: 235px;
+        padding: 14px 16px; margin-bottom: 8px; min-width: 240px;
         box-shadow: 0 4px 20px rgba(0,0,0,.7);
       }
-      #r34dl-panel-body h3 { margin: 0 0 10px; font-size: 13px; color: #ff6b6b; border-bottom: 1px solid #333; padding-bottom: 6px; }
-      .r34dl-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+      #r34dl-panel-body h3 {
+        margin: 0 0 10px; font-size: 13px; color: #ff6b6b;
+        border-bottom: 1px solid #333; padding-bottom: 6px;
+      }
+      .r34dl-row {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 8px; gap: 8px;
+      }
       .r34dl-row label { color: #ccc; font-size: 12px; flex-shrink: 0; }
-      .r34dl-row select { background: #333; border: 1px solid #555; color: #eee; border-radius: 4px; padding: 3px 6px; font-size: 12px; cursor: pointer; }
-      #r34dl-clear-btn { background: #7a2020; color: #fbb; border: none; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+      .r34dl-row select {
+        background: #333; border: 1px solid #555; color: #eee;
+        border-radius: 4px; padding: 3px 6px; font-size: 12px; cursor: pointer;
+      }
+      #r34dl-clear-btn {
+        background: #7a2020; color: #fbb; border: none;
+        border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer;
+      }
       #r34dl-clear-btn:hover { background: #a02020; }
-      .r34dl-tip { font-size: 11px; color: #777; margin-top: 8px; line-height: 1.5; }
+      .r34dl-tip {
+        font-size: 11px; color: #777; margin-top: 8px; line-height: 1.5;
+      }
     `);
   }
 
@@ -186,7 +220,6 @@
       });
       if (links.length) break;
     }
-    // 去重
     const seen = new Set();
     return links.filter(l => { if (seen.has(l.href)) return false; seen.add(l.href); return true; });
   }
@@ -214,7 +247,7 @@
   ───────────────────────────────────────── */
   function fetchAndDownload(videoUrl, btn, title, videoId) {
     btn.classList.add('loading');
-    btn.textContent = '⏳ 获取中…';
+    btn.textContent = '⏳';
 
     GM_xmlhttpRequest({
       method: 'GET',
@@ -235,18 +268,20 @@
           markDownloaded(videoId);
           setDoneState(btn, videoId);
           // 补角标
-          const wrap = btn.closest('[data-r34dl]');
-          if (wrap && !wrap.querySelector('.r34dl-badge')) addBadge(wrap);
+          const imgWrap = btn.closest('[data-r34dl]');
+          if (imgWrap && !imgWrap.querySelector('.r34dl-badge')) {
+            addBadge(imgWrap);
+          }
         } else {
           btn.classList.remove('loading');
-          btn.textContent = '✅ 下载中';
-          setTimeout(() => resetBtn(btn), 3000);
+          btn.textContent = '✅ 完成';
+          setTimeout(() => resetBtn(btn), 2500);
         }
       },
       onerror() {
         btn.classList.remove('loading');
         btn.classList.add('dl-err');
-        btn.textContent = '❌ 请求失败';
+        btn.textContent = '❌ 失败';
         setTimeout(() => resetBtn(btn), 2500);
       }
     });
@@ -255,12 +290,11 @@
   function setDoneState(btn, videoId) {
     btn.classList.remove('loading', 'dl-err', 'r34dl-quick');
     btn.classList.add('r34dl-done');
-    btn.textContent = '';          // 文字由 CSS ::before 接管
+    btn.textContent = '';  // CSS ::before 接管
     btn.dataset.doneLabel = '✅ 已下载';
-    const map = loadDownloaded();
-    const ts = map[videoId];
+    const ts = loadDownloaded()[videoId];
     btn.title = ts
-      ? `已下载于 ${new Date(ts).toLocaleDateString()} ${new Date(ts).toLocaleTimeString()}（点击重新下载）`
+      ? `已下载于 ${new Date(ts).toLocaleString()}（点击重新下载）`
       : '已下载（点击重新下载）';
     btn.dataset.videoId = videoId;
   }
@@ -268,79 +302,78 @@
   function resetBtn(btn) {
     btn.classList.remove('loading', 'dl-err', 'r34dl-done');
     if (!btn.classList.contains('r34dl-quick')) btn.classList.add('r34dl-quick');
-    btn.textContent = btn.dataset.origText || '⬇ 快速下载';
+    btn.textContent = '⬇ 下载';
   }
 
-  function addBadge(wrap) {
+  function addBadge(imgWrap) {
+    if (imgWrap.querySelector('.r34dl-badge')) return;
     const b = document.createElement('div');
     b.className = 'r34dl-badge';
     b.textContent = '✓ 已下载';
-    wrap.appendChild(b);
+    imgWrap.appendChild(b);
   }
 
   /* ─────────────────────────────────────────
-     核心：找到视频卡片并注入按钮
-     策略：不依赖固定类名，改为找所有含 /videos/{id}/ 链接的、
-     自身或祖先带封面图的容器。
+     核心：注入按钮
+     真实卡片结构（已验证）：
+       div.item.thumb[data-video-card-id="xxx"]
+         a.th.js-open-popup[href="/video/{id}/slug/"]
+           div.img.wrap_image          ← 注入点
+             img.thumb
+             div.quality / div.time
+           div.thumb_title             ← 标题
   ───────────────────────────────────────── */
   function injectCardButtons() {
-    // 找所有指向视频详情页的链接
-    const videoLinks = document.querySelectorAll('a[href*="/videos/"]');
+    // 精确选择器：data-video-card-id 是视频卡片专属属性
+    const cards = document.querySelectorAll(
+      '.item.thumb[data-video-card-id]:not([data-r34dl])'
+    );
 
-    videoLinks.forEach(link => {
-      const videoUrl = link.href;
+    cards.forEach(card => {
+      // 马上标记，防止重复处理
+      card.setAttribute('data-r34dl', '1');
+
+      // 获取视频链接（href 是 /video/{id}/...）
+      const linkEl = card.querySelector('a.th[href*="/video/"]');
+      if (!linkEl) return;
+
+      const videoUrl = linkEl.href;
       const videoId  = extractVideoId(videoUrl);
       if (!videoId) return;
 
-      // 向上找一个合适的"卡片容器"：包含 img 且相对可定位
-      // 优先找 link 本身（如果它包含 img），否则往上爬最多 4 层
-      let imgWrap = null;
-      let cur = link;
-      for (let i = 0; i < 5; i++) {
-        if (cur.querySelector('img') || cur.tagName === 'A' && cur.querySelector('img')) {
-          imgWrap = cur;
-          break;
-        }
-        if (!cur.parentElement) break;
-        cur = cur.parentElement;
-        if (cur.querySelector('img')) { imgWrap = cur; break; }
-      }
+      // 图片容器
+      const imgWrap = card.querySelector('div.img.wrap_image');
       if (!imgWrap) return;
 
-      // 防止重复注入：以 imgWrap 为单位标记
-      if (imgWrap.hasAttribute('data-r34dl')) return;
+      // 保证相对定位（站点已有，保险起见）
+      if (getComputedStyle(imgWrap).position === 'static') {
+        imgWrap.style.setProperty('position', 'relative', 'important');
+      }
       imgWrap.setAttribute('data-r34dl', '1');
 
-      // 相对定位
-      const pos = getComputedStyle(imgWrap).position;
-      if (pos === 'static') imgWrap.style.setProperty('position', 'relative', 'important');
-
-      // 获取标题
-      let title = '';
-      const titleEl = imgWrap.closest('[class]')?.querySelector('[class*="title"] a, .title a')
-                   || imgWrap.querySelector('[alt]');
-      if (titleEl) title = (titleEl.textContent || titleEl.getAttribute('alt') || '').trim();
+      // 标题
+      const titleEl = card.querySelector('.thumb_title');
+      const title   = titleEl ? titleEl.textContent.trim() : '';
 
       const alreadyDone = isDownloaded(videoId);
 
-      // 角标
+      // 已下载角标（左上角常驻）
       if (alreadyDone) addBadge(imgWrap);
 
-      // 覆盖层
-      const overlay = document.createElement('div');
-      overlay.className = 'r34dl-overlay';
+      // 按钮容器（左下角固定显示）
+      const wrap = document.createElement('div');
+      wrap.className = 'r34dl-wrap';
 
-      // 按钮
       const btn = document.createElement('button');
       btn.className = 'r34dl-btn';
-      btn.dataset.origText = '⬇ 快速下载';
+      btn.dataset.origText = '⬇ 下载';
 
       if (alreadyDone) {
         setDoneState(btn, videoId);
       } else {
         btn.classList.add('r34dl-quick');
-        btn.textContent = '⬇ 快速下载';
-        btn.title = `按配置画质下载（当前：${getQuality()}）`;
+        btn.textContent = '⬇ 下载';
+        btn.title = `下载（画质：${getQuality()}）`;
       }
 
       btn.addEventListener('click', e => {
@@ -349,8 +382,8 @@
         fetchAndDownload(videoUrl, btn, title, videoId);
       });
 
-      overlay.appendChild(btn);
-      imgWrap.appendChild(overlay);
+      wrap.appendChild(btn);
+      imgWrap.appendChild(wrap);
     });
   }
 
@@ -358,18 +391,19 @@
      详情页增强
   ───────────────────────────────────────── */
   function enhanceDetailPage() {
-    if (!/\/videos\/\d+\//.test(location.pathname)) return;
+    // 详情页 URL 是 /video/{id}/ 而非 /videos/
+    if (!/\/video\/\d+\//.test(location.pathname)) return;
     const videoId = extractVideoId(location.pathname);
     const dlArea  = document.querySelector(
       '.content-more-download, .download-links, .download_links'
     );
     if (!dlArea) return;
 
-    const done = isDownloaded(videoId);
-    const color = done ? '#16a03c' : '#d1404a';
+    const done  = isDownloaded(videoId);
+    const color = done ? '#169b3a' : '#d1404a';
     dlArea.style.cssText += `border:2px solid ${color};border-radius:6px;padding:8px;`;
     const tip = document.createElement('div');
-    tip.style.cssText = `font-size:11px;color:${color};margin-bottom:4px;`;
+    tip.style.cssText = `font-size:11px;color:${color};margin-bottom:4px;font-family:Arial;`;
     if (done) {
       const ts = loadDownloaded()[videoId];
       tip.textContent = `✅ R34 Downloader：此视频已下载${ts ? '（' + new Date(ts).toLocaleString() + '）' : ''}`;
@@ -411,9 +445,10 @@
         <button id="r34dl-clear-btn">清空记录</button>
       </div>
       <div class="r34dl-tip">
-        · 鼠标悬停视频封面即可看到 <b>⬇ 快速下载</b>。<br>
-        · 下载后封面左上角显示 <b>✓ 已下载</b> 角标，长期保留。<br>
-        · 绿色按钮 hover 变 🔁 可重新下载。
+        · 封面左下角固定显示 <b>⬇ 下载</b> 按钮。<br>
+        · 下载后按钮变绿，左上角出现 <b>✓ 已下载</b> 角标。<br>
+        · 绿色按钮 hover 变 🔁 可重新下载。<br>
+        · 清空记录不删本地文件。
       </div>
     `;
 
@@ -435,8 +470,8 @@
     sel.value = getQuality();
     sel.addEventListener('change', () => {
       GM_setValue(CFG_QUALITY, sel.value);
-      document.querySelectorAll('.r34dl-quick').forEach(b => {
-        b.title = `按配置画质下载（当前：${sel.value}）`;
+      document.querySelectorAll('.r34dl-btn.r34dl-quick').forEach(b => {
+        b.title = `下载（画质：${sel.value}）`;
       });
     });
 
@@ -444,7 +479,9 @@
     refreshPanelCount();
 
     document.getElementById('r34dl-clear-btn').addEventListener('click', () => {
-      if (confirm(`确定清空全部 ${downloadedCount()} 条已下载记录吗？`)) clearAllDownloaded();
+      if (confirm(`确定清空全部 ${downloadedCount()} 条已下载记录吗？`)) {
+        clearAllDownloaded();
+      }
     });
 
     toggle.addEventListener('click', () => {
@@ -455,8 +492,7 @@
   }
 
   /* ─────────────────────────────────────────
-     防抖扫描 + MutationObserver
-     —— 只要 DOM 有变化就尝试扫描
+     MutationObserver + XHR 拦截
   ───────────────────────────────────────── */
   let scanTimer = null;
   function scheduleScan(delay = 400) {
@@ -465,17 +501,14 @@
   }
 
   function watchDynamic() {
-    new MutationObserver(() => scheduleScan(300))
+    new MutationObserver(() => scheduleScan(250))
       .observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  /* ─────────────────────────────────────────
-     拦截 XHR 完成事件（AJAX 加载卡片后触发扫描）
-  ───────────────────────────────────────── */
   function hookXHR() {
     const origOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (...args) {
-      this.addEventListener('loadend', () => scheduleScan(500));
+      this.addEventListener('loadend', () => scheduleScan(400));
       return origOpen.apply(this, args);
     };
   }
@@ -488,16 +521,12 @@
     buildPanel();
     watchDynamic();
     hookXHR();
-    // 立即扫一次（处理已有内容）
     scheduleScan(100);
-    // 备用延迟扫：应对极慢渲染
     setTimeout(injectCardButtons, 1500);
-    setTimeout(injectCardButtons, 3000);
-    // 详情页
+    setTimeout(injectCardButtons, 3500);
     enhanceDetailPage();
   }
 
-  // document-start 时 body 还不存在，等 body 出现再初始化
   if (document.body) {
     init();
   } else {
