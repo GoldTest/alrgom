@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EDIFIER 漫步者音响像素屏全功能控制台</title>
+  <style>
+    :root {
+      --bg-color: #0b0e14;
+      --card-bg: #151921;
+      --card-border: #262c36;
+      --accent: #58a6ff;
+      --accent-hover: #1f6feb;
+      --success: #238636;
+      --danger: #da3633;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --pixel-on: #00ff66;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text); padding: 20px; }
+    .container { max-width: 1260px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--card-border); }
+    h1 { font-size: 1.4rem; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .badge { font-size: 0.75rem; padding: 3px 10px; border-radius: 12px; background: var(--card-border); color: var(--text-dim); }
+    .badge.connected { background: var(--success); color: #fff; }
+
+    .tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--card-border); padding-bottom: 8px; }
+    .tab-btn { background: transparent; border: none; color: var(--text-dim); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: 500; transition: 0.2s; }
+    .tab-btn:hover { background: var(--card-bg); color: #fff; }
+    .tab-btn.active { background: var(--card-border); color: var(--accent); }
+
+    .grid { display: grid; grid-template-columns: 2.1fr 1fr; gap: 20px; }
+    @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .card h2 { font-size: 1.1rem; color: #fff; border-bottom: 1px solid var(--card-border); padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+
+    .btn { background: var(--accent); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: #b62324; }
+    .btn-success { background: var(--success); }
+    .btn-success:hover { background: #2ea043; }
+    .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
+    .btn-outline:hover { background: var(--card-border); }
+    .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+
+    .flex-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .flex-col { display: flex; flex-direction: column; gap: 8px; }
+
+    input, select, textarea { background: #0b0e14; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.9rem; width: 100%; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+    /* 像素画布区域 */
+    .canvas-container {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      overflow-x: auto;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+    }
+    canvas#pixelCanvas {
+      background: #050505;
+      cursor: crosshair;
+      image-rendering: pixelated;
+      box-shadow: 0 0 12px rgba(0,255,100,0.18);
+    }
+
+    /* 预设卡片 */
+    .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+    .preset-card { background: #0b0e14; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; text-align: center; cursor: pointer; transition: 0.2s; font-size: 0.85rem; }
+    .preset-card:hover { border-color: var(--accent); background: #161b22; }
+
+    /* 日志控制台 */
+    #logConsole {
+      background: #05080c;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: Consolas, monospace;
+      font-size: 0.8rem;
+      padding: 8px;
+      color: #7ee787;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-tx { color: #79c0ff; }
+    .log-rx { color: #d2a8ff; }
+    .log-err { color: #ff7b72; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: flex; flex-direction: column; gap: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>
+      🎵 EDIFIER 漫步者音响像素屏全功能控制台
+      <span class="badge" id="statusBadge">未连接</span>
+    </h1>
+    <div class="flex-row">
+      <button class="btn" id="btnConnect">🔌 连接设备 (WebHID)</button>
+      <button class="btn btn-danger" id="btnDisconnect" disabled>断开</button>
+    </div>
+  </header>
+
+  <!-- 顶部导航 -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('draw')">🎨 像素画板 & 动效</button>
+    <button class="tab-btn" onclick="switchTab('scroll')">💬 滚动弹幕 & 歌词</button>
+    <button class="tab-btn" onclick="switchTab('audio')">📊 实时音频律动 (WebAudio)</button>
+    <button class="tab-btn" onclick="switchTab('clock')">⏱️ 智能时钟 & 仪表盘</button>
+  </div>
+
+  <div class="grid">
+    <!-- 左侧区域：主操作视窗 -->
+    <div class="flex-col">
+      
+      <!-- TAB 1: 像素画板 -->
+      <div id="tab-draw" class="tab-content active">
+        <div class="card">
+          <h2>
+            <span>🎨 256×32 像素画板</span>
+            <span style="font-size: 0.8rem; color: var(--text-dim);">协议: CM_ED03 (1040 Bytes BIN)</span>
+          </h2>
+          
+          <div class="flex-row" style="justify-content: space-between;">
+            <div class="flex-row">
+              <button class="btn btn-outline btn-sm" id="btnToolDraw">✏️ 画笔</button>
+              <button class="btn btn-outline btn-sm" id="btnToolErase">🧹 橡皮</button>
+              <button class="btn btn-outline btn-sm" id="btnClearCanvas">🗑️ 清空</button>
+              <button class="btn btn-outline btn-sm" id="btnInvertCanvas">🔄 反色</button>
+            </div>
+            <div class="flex-row">
+              <button class="btn btn-success" id="btnSendPixelArt" disabled>🚀 刷入屏幕</button>
+            </div>
+          </div>
+
+          <div class="canvas-container">
+            <canvas id="pixelCanvas" width="1024" height="128"></canvas>
+          </div>
+
+          <!-- 文字转点阵 -->
+          <div class="flex-row">
+            <input type="text" id="textToPixelInput" placeholder="输入英文/汉字转为点阵 (如: EDIFIER 666)" style="flex: 1;">
+            <select id="fontSizeSelect" style="width: 120px;">
+              <option value="20">字体: 20px</option>
+              <option value="24" selected>字体: 24px</option>
+              <option value="28">字体: 28px</option>
+            </select>
+            <button class="btn btn-outline" id="btnRenderText" style="width: auto;">生成点阵</button>
+          </div>
+
+          <!-- 预设图案库 -->
+          <label style="font-size: 0.9rem; margin-top: 6px;">💡 快捷预设图案：</label>
+          <div class="preset-grid">
+            <div class="preset-card" onclick="loadPreset('heart')">❤️ 炫彩爱心</div>
+            <div class="preset-card" onclick="loadPreset('pacman')">👾 吃豆人</div>
+            <div class="preset-card" onclick="loadPreset('wave')">🌊 正弦波形</div>
+            <div class="preset-card" onclick="loadPreset('pulse')">📈 心电图跳动</div>
+            <div class="preset-card" onclick="loadPreset('clock')">🕒 实时时间</div>
+            <div class="preset-card" onclick="loadPreset('equalizer')">📊 均衡器频谱</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: 滚动文本 -->
+      <div id="tab-scroll" class="tab-content">
+        <div class="card">
+          <h2>
+            <span>💬 实时滚动弹幕 / 文本下发</span>
+            <span style="font-size: 0.8rem; color: var(--text-dim);">协议: CM_E8 (UTF-8)</span>
+          </h2>
+          <div class="flex-col">
+            <label>输入要在音响上实时水平滚动的文本：</label>
+            <textarea id="scrollTextInput" rows="3" placeholder="输入任意中英文字符串、歌词或通知内容...">🎵 正在播放: 漫步者高保真音质体验 ~ Welcome to EDIFIER TempoHub</textarea>
+            
+            <div class="flex-row">
+              <select id="scrollSourceId" style="width: 160px;">
+                <option value="1">Source ID: 1 (常规)</option>
+                <option value="2">Source ID: 2 (副通道)</option>
+                <option value="0">Source ID: 0 (主通道)</option>
+              </select>
+              <button class="btn btn-success" id="btnSendScrollText" style="flex: 1;" disabled>📨 立即发送弹幕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: 实时音频律动 -->
+      <div id="tab-audio" class="tab-content">
+        <div class="card">
+          <h2>
+            <span>📊 浏览器音频实时律动推送</span>
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Web Audio API -> CM_ED03 实时流</span>
+          </h2>
+          <div class="flex-col">
+            <p style="font-size: 0.85rem; color: var(--text-dim);">
+              开启麦克风或立体声混音输入，网页端将通过 FFT 算法实时抓取 256 频段声音能量，并以 20FPS 动态推送到音响像素屏！
+            </p>
+            <div class="flex-row">
+              <button class="btn btn-success" id="btnStartAudioViz" disabled>🎙️ 启动麦克风律动</button>
+              <button class="btn btn-danger" id="btnStopAudioViz" disabled>⏹️ 停止律动</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: 智能时钟 -->
+      <div id="tab-clock" class="tab-content">
+        <div class="card">
+          <h2>
+            <span>⏱️ 智能时钟 & 实时动态看板</span>
+          </h2>
+          <div class="flex-col">
+            <p style="font-size: 0.85rem; color: var(--text-dim);">
+              自动以 1 秒为周期，将精确到秒的数字时钟和日期同步刷新到音响像素屏上。
+            </p>
+            <div class="flex-row">
+              <button class="btn btn-success" id="btnStartLiveClock" disabled>⏰ 启动实时时钟同步</button>
+              <button class="btn btn-danger" id="btnStopLiveClock" disabled>⏹️ 停止时钟同步</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 右侧：控制与原始报文 -->
+    <div class="flex-col" style="gap: 20px;">
+      <!-- 硬件设置与模式切换 -->
+      <div class="card">
+        <h2>⚙️ 屏幕状态与模式 (CM_ED02)</h2>
+        <div class="flex-col">
+          <label>屏幕硬件开关：</label>
+          <div class="flex-row">
+            <button class="btn btn-outline" id="btnScreenOn" style="flex: 1;" disabled>☀️ 开启屏幕</button>
+            <button class="btn btn-outline" id="btnScreenOff" style="flex: 1;" disabled>🌙 关闭屏幕</button>
+          </div>
+
+          <label style="margin-top: 6px;">预设模式选择：</label>
+          <select id="modeSelect">
+            <option value="0">0: 纯色色彩 (Color)</option>
+            <option value="1">1: 时钟场景 (Clock Scene)</option>
+            <option value="2">2: 像素空间 (Pixel Space)</option>
+            <option value="3">3: 音乐律动 (Music Spectrum)</option>
+            <option value="5">5: 时间工具/番茄钟 (Time Tool)</option>
+            <option value="8">8: 新闻动态 (News)</option>
+            <option value="9">9: 天气看板 (Weather)</option>
+          </select>
+          <button class="btn btn-outline" id="btnSetMode" disabled>切换工作模式</button>
+
+          <label style="margin-top: 6px;">休眠屏保 (CM_ED1E)：</label>
+          <div class="flex-row">
+            <button class="btn btn-outline" id="btnScreenSaverOn" style="flex: 1;" disabled>开启屏保</button>
+            <button class="btn btn-outline" id="btnScreenSaverOff" style="flex: 1;" disabled>关闭屏保</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 原始指令调试 -->
+      <div class="card">
+        <h2>🛠️ 原始指令 (Raw Packet)</h2>
+        <div class="flex-col">
+          <label>命令字 (Hex, 如 ED02, E8, ED03):</label>
+          <input type="text" id="rawCmdHex" value="ED02">
+          <label>Payload (Hex 字节, 空格分隔):</label>
+          <input type="text" id="rawPayloadHex" value="01 00 00">
+          <button class="btn btn-outline" id="btnSendRaw" disabled>发送原始指令</button>
+        </div>
+      </div>
+
+      <!-- 报文日志 -->
+      <div class="card">
+        <h2>
+          <span>📜 通信报文日志</span>
+          <button class="btn btn-outline btn-sm" id="btnClearLog">清空</button>
+        </h2>
+        <div id="logConsole"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===================== 漫步者协议核心参数 =====================
+  const VENDOR_ID = 0x2D99; // 11673
+  const COMMON_BYTE = 0x2F; // 47
+  const HEADER_BYTE = 0x55; // 85
+
+  let hidDevice = null;
+  let isDrawing = false;
+  let currentTool = 'draw';
+
+  const ROWS = 32;
+  const COLS = 256;
+  let matrix = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+
+  // 音频与时钟定时器
+  let audioContext = null;
+  let analyser = null;
+  let audioInterval = null;
+  let clockInterval = null;
+
+  // ===================== DOM 元素 =====================
+  const statusBadge = document.getElementById('statusBadge');
+  const btnConnect = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  const logConsole = document.getElementById('logConsole');
+  const pixelCanvas = document.getElementById('pixelCanvas');
+  const ctx = pixelCanvas.getContext('2d');
+
+  function switchTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    
+    event.target.classList.add('active');
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+  }
+
+  function log(msg, type = 'info') {
+    const time = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    if (type === 'tx') line.className = 'log-tx';
+    else if (type === 'rx') line.className = 'log-rx';
+    else if (type === 'err') line.className = 'log-err';
+    line.textContent = `[${time}] ${msg}`;
+    logConsole.appendChild(line);
+    logConsole.scrollTop = logConsole.scrollHeight;
+  }
+
+  function toHexStr(arr) {
+    return Array.from(arr).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+  }
+
+  // ===================== 报文封装与校验计算 =====================
+  function buildEdifierReport(cmdIndex, payload = []) {
+    const deviceIndex = Math.floor(cmdIndex / 256);
+    const subIndex = cmdIndex & 0xFF;
+    const devType = (deviceIndex === 1) ? 0x01 : 0x00;
+
+    const payloadLen = payload.length;
+    const lenHigh = (payloadLen >> 8) & 0xFF;
+    const lenLow = payloadLen & 0xFF;
+
+    // 帧头部分: [0x55, devType, subIndex, lenHigh, lenLow]
+    let frame = [HEADER_BYTE, devType, subIndex, lenHigh, lenLow, ...payload];
+
+    // 计算 CRC8 (累加和 % 256)
+    let sum = 0;
+    for (let i = 0; i < frame.length; i++) {
+      sum = (sum + frame[i]) & 0xFF;
+    }
+    frame.push(sum);
+
+    // 最终 64 字节报文 (WebHID 发送时，Report ID 为 0x2F，后面跟 63 字节数据)
+    const reportData = new Uint8Array(63);
+    for (let i = 0; i < frame.length && i < 63; i++) {
+      reportData[i] = frame[i];
+    }
+    return reportData;
+  }
+
+  async function sendReport(cmdIndex, payload = []) {
+    if (!hidDevice || !hidDevice.opened) {
+      log('设备未连接', 'err');
+      return false;
+    }
+    const reportData = buildEdifierReport(cmdIndex, payload);
+    try {
+      await hidDevice.sendReport(COMMON_BYTE, reportData);
+      log(`TX (0x${cmdIndex.toString(16).toUpperCase()}): ${COMMON_BYTE.toString(16).toUpperCase()} ${toHexStr(reportData)}`, 'tx');
+      return true;
+    } catch (err) {
+      log(`发送失败: ${err.message}`, 'err');
+      return false;
+    }
+  }
+
+  // ===================== WebHID 连接 =====================
+  btnConnect.addEventListener('click', async () => {
+    if (!('hid' in navigator)) {
+      alert('您的浏览器不支持 WebHID，请使用最新版 Chrome 或 Edge 浏览器！');
+      return;
+    }
+    try {
+      const devices = await navigator.hid.requestDevice({
+        filters: [{ vendorId: VENDOR_ID }]
+      });
+      if (devices.length === 0) return;
+
+      hidDevice = devices[0];
+      await hidDevice.open();
+
+      statusBadge.textContent = '已连接';
+      statusBadge.className = 'badge connected';
+      btnConnect.disabled = true;
+      btnDisconnect.disabled = false;
+      enableControls(true);
+
+      log(`已成功连接: ${hidDevice.productName || 'EDIFIER Speaker'} (VID: 0x${hidDevice.vendorId.toString(16)}, PID: 0x${hidDevice.productId.toString(16)})`);
+
+      hidDevice.addEventListener('inputreport', (event) => {
+        const { data, reportId } = event;
+        const raw = new Uint8Array(data.buffer);
+        log(`RX (Report 0x${reportId.toString(16)}): ${toHexStr(raw)}`, 'rx');
+      });
+
+    } catch (err) {
+      log(`连接设备异常: ${err.message}`, 'err');
+    }
+  });
+
+  btnDisconnect.addEventListener('click', async () => {
+    if (hidDevice) {
+      await hidDevice.close();
+      hidDevice = null;
+    }
+    statusBadge.textContent = '未连接';
+    statusBadge.className = 'badge';
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    enableControls(false);
+    log('设备已断开');
+  });
+
+  function enableControls(enable) {
+    document.querySelectorAll('.card button, .card select, .card input, .card textarea').forEach(el => {
+      if (el.id !== 'btnConnect') el.disabled = !enable;
+    });
+  }
+
+  // ===================== 画布交互与渲染 =====================
+  const CELL_SIZE = 4;
+
+  function renderCanvas() {
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (matrix[r][c] === 1) {
+          ctx.fillStyle = '#00ff66';
+          ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
+        }
+      }
+    }
+  }
+
+  function setPixel(e, val) {
+    const rect = pixelCanvas.getBoundingClientRect();
+    const scaleX = pixelCanvas.width / rect.width;
+    const scaleY = pixelCanvas.height / rect.height;
+    const x = Math.floor((e.clientX - rect.left) * scaleX / CELL_SIZE);
+    const y = Math.floor((e.clientY - rect.top) * scaleY / CELL_SIZE);
+
+    if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+      matrix[y][x] = val;
+      renderCanvas();
+    }
+  }
+
+  pixelCanvas.addEventListener('mousedown', (e) => {
+    isDrawing = true;
+    setPixel(e, currentTool === 'draw' ? 1 : 0);
+  });
+  window.addEventListener('mouseup', () => isDrawing = false);
+  pixelCanvas.addEventListener('mousemove', (e) => {
+    if (isDrawing) setPixel(e, currentTool === 'draw' ? 1 : 0);
+  });
+
+  document.getElementById('btnToolDraw').onclick = () => currentTool = 'draw';
+  document.getElementById('btnToolErase').onclick = () => currentTool = 'erase';
+  document.getElementById('btnClearCanvas').onclick = () => {
+    matrix = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+    renderCanvas();
+  };
+  document.getElementById('btnInvertCanvas').onclick = () => {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) matrix[r][c] = matrix[r][c] ? 0 : 1;
+    }
+    renderCanvas();
+  };
+
+  // 文字转点阵
+  document.getElementById('btnRenderText').onclick = () => {
+    const text = document.getElementById('textToPixelInput').value.trim();
+    const fontSize = document.getElementById('fontSizeSelect').value;
+    if (!text) return;
+
+    const off = document.createElement('canvas');
+    off.width = COLS;
+    off.height = ROWS;
+    const octx = off.getContext('2d');
+    octx.fillStyle = '#000';
+    octx.fillRect(0, 0, COLS, ROWS);
+    octx.font = `bold ${fontSize}px monospace, sans-serif`;
+    octx.fillStyle = '#fff';
+    octx.textBaseline = 'middle';
+    octx.fillText(text, 4, 16);
+
+    const imgData = octx.getImageData(0, 0, COLS, ROWS);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = (r * COLS + c) * 4;
+        matrix[r][c] = imgData.data[idx] > 128 ? 1 : 0;
+      }
+    }
+    renderCanvas();
+  };
+
+  // 预设图案
+  function loadPreset(name) {
+    matrix = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+    if (name === 'heart') {
+      const heartPattern = [
+        "  0000000     0000000  ",
+        " 000000000   000000000 ",
+        "00000000000 00000000000",
+        "00000000000000000000000",
+        " 000000000000000000000 ",
+        "  0000000000000000000  ",
+        "   00000000000000000   ",
+        "     0000000000000     ",
+        "       000000000       ",
+        "         00000         ",
+        "           0           "
+      ];
+      const startX = 115, startY = 10;
+      for (let r = 0; r < heartPattern.length; r++) {
+        for (let c = 0; c < heartPattern[r].length; c++) {
+          if (heartPattern[r][c] === '0') matrix[startY + r][startX + c] = 1;
+        }
+      }
+    } else if (name === 'pulse') {
+      for (let c = 0; c < COLS; c++) {
+        const mid = 16;
+        let y = mid;
+        if (c % 60 > 20 && c % 60 < 25) y = mid - 12;
+        else if (c % 60 >= 25 && c % 60 < 30) y = mid + 12;
+        matrix[y][c] = 1;
+      }
+    } else if (name === 'wave') {
+      for (let c = 0; c < COLS; c++) {
+        const y = Math.round(15 + 10 * Math.sin(c * 0.1));
+        if (y >= 0 && y < ROWS) matrix[y][c] = 1;
+      }
+    } else if (name === 'pacman') {
+      document.getElementById('textToPixelInput').value = '👾 • • • • • ᗧ';
+      document.getElementById('btnRenderText').click();
+      return;
+    } else if (name === 'clock') {
+      const now = new Date().toLocaleTimeString();
+      document.getElementById('textToPixelInput').value = `TIME  ${now}`;
+      document.getElementById('btnRenderText').click();
+      return;
+    } else if (name === 'equalizer') {
+      for (let c = 0; c < COLS; c += 4) {
+        const h = Math.floor(Math.random() * 28) + 2;
+        for (let r = 31; r >= 31 - h; r--) {
+          matrix[r][c] = 1;
+          matrix[r][c+1] = 1;
+        }
+      }
+    }
+    renderCanvas();
+  }
+
+  // ===================== 点阵下发逻辑 (CM_ED03) =====================
+  function encodeMatrixToPayload() {
+    const payload = new Uint8Array(1024);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (matrix[r][c] === 1) {
+          const groupIdx = Math.floor(r / 8);
+          const bitOffset = r % 8;
+          const arrayIdx = groupIdx * 256 + c;
+          payload[arrayIdx] |= (1 << bitOffset);
+        }
+      }
+    }
+    return payload;
+  }
+
+  function buildBinHeader(payloadSize) {
+    const header = new Uint8Array(16);
+    const now = String(Math.floor(Date.now() / 1000)).padStart(16, '0');
+    for (let i = 0; i < 8; i++) {
+      header[i] = parseInt(now.substr(i * 2, 2), 10);
+    }
+    const totalSize = 16 + payloadSize;
+    header[8] = (totalSize >> 24) & 0xFF;
+    header[9] = (totalSize >> 16) & 0xFF;
+    header[10] = (totalSize >> 8) & 0xFF;
+    header[11] = totalSize & 0xFF;
+    header[12] = 0x5A;
+    header[13] = 0xA5;
+    header[14] = 0x01;
+    header[15] = 0x00;
+    return header;
+  }
+
+  async function pushMatrixToScreen() {
+    const payload = encodeMatrixToPayload();
+    const header = buildBinHeader(payload.length);
+
+    const fullBin = new Uint8Array(header.length + payload.length);
+    fullBin.set(header, 0);
+    fullBin.set(payload, header.length);
+
+    const CHUNK_SIZE = 52;
+    const totalPackets = Math.ceil(fullBin.length / CHUNK_SIZE);
+    const comboIndex = 0;
+
+    for (let i = 0; i < totalPackets; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, fullBin.length);
+      const chunk = fullBin.slice(start, end);
+
+      const wrapped = [comboIndex, totalPackets, i, ...chunk];
+      await sendReport(0xED03, wrapped);
+      await new Promise(r => setTimeout(r, 12));
+    }
+  }
+
+  document.getElementById('btnSendPixelArt').onclick = async () => {
+    log('正在下发 256x32 点阵画到音响...');
+    await pushMatrixToScreen();
+    log('🎉 点阵画面刷屏成功！');
+  };
+
+  // ===================== 滚动弹幕下发 (CM_E8) =====================
+  document.getElementById('btnSendScrollText').onclick = async () => {
+    const text = document.getElementById('scrollTextInput').value.trim();
+    const sourceId = parseInt(document.getElementById('scrollSourceId').value, 10);
+    if (!text) return;
+
+    const encoder = new TextEncoder();
+    const textBytes = Array.from(encoder.encode(text)).slice(0, 255);
+    const packageMax = 48;
+    const sendTimes = Math.ceil(textBytes.length / packageMax);
+
+    log(`下发滚动文本: "${text}" (${textBytes.length} bytes)`);
+
+    for (let i = 0; i < sendTimes; i++) {
+      const chunk = textBytes.slice(i * packageMax, (i + 1) * packageMax);
+      const payload = [sourceId, textBytes.length, ...chunk];
+      await sendReport(0xE8, payload);
+      await new Promise(r => setTimeout(r, 20));
+    }
+  };
+
+  // ===================== 实时音频律动 (WebAudio API) =====================
+  document.getElementById('btnStartAudioViz').onclick = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+
+      document.getElementById('btnStartAudioViz').disabled = true;
+      document.getElementById('btnStopAudioViz').disabled = false;
+      log('🎙️ 麦克风音频律动已启动，正在实时渲染...');
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      audioInterval = setInterval(async () => {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // 渲染到 256 列矩阵
+        matrix = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+        for (let c = 0; c < COLS; c++) {
+          const freqVal = dataArray[c] || 0;
+          const barHeight = Math.floor((freqVal / 255) * 31);
+          for (let r = 31; r >= 31 - barHeight; r--) {
+            matrix[r][c] = 1;
+          }
+        }
+        renderCanvas();
+        await pushMatrixToScreen();
+      }, 50); // 20 FPS
+
+    } catch (err) {
+      log(`音频启动失败: ${err.message}`, 'err');
+    }
+  };
+
+  document.getElementById('btnStopAudioViz').onclick = () => {
+    if (audioInterval) clearInterval(audioInterval);
+    if (audioContext) audioContext.close();
+    document.getElementById('btnStartAudioViz').disabled = false;
+    document.getElementById('btnStopAudioViz').disabled = true;
+    log('⏹️ 音频律动已停止');
+  };
+
+  // ===================== 实时时钟同步 =====================
+  document.getElementById('btnStartLiveClock').onclick = () => {
+    document.getElementById('btnStartLiveClock').disabled = true;
+    document.getElementById('btnStopLiveClock').disabled = false;
+    log('⏰ 实时时钟同步已启动');
+
+    clockInterval = setInterval(async () => {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString();
+      const dateStr = `${now.getMonth()+1}/${now.getDate()}`;
+      
+      const off = document.createElement('canvas');
+      off.width = COLS;
+      off.height = ROWS;
+      const octx = off.getContext('2d');
+      octx.fillStyle = '#000';
+      octx.fillRect(0, 0, COLS, ROWS);
+      octx.font = 'bold 22px monospace';
+      octx.fillStyle = '#fff';
+      octx.textBaseline = 'middle';
+      octx.fillText(`${timeStr}  [${dateStr}]`, 12, 16);
+
+      const imgData = octx.getImageData(0, 0, COLS, ROWS);
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const idx = (r * COLS + c) * 4;
+          matrix[r][c] = imgData.data[idx] > 128 ? 1 : 0;
+        }
+      }
+      renderCanvas();
+      await pushMatrixToScreen();
+    }, 1000);
+  };
+
+  document.getElementById('btnStopLiveClock').onclick = () => {
+    if (clockInterval) clearInterval(clockInterval);
+    document.getElementById('btnStartLiveClock').disabled = false;
+    document.getElementById('btnStopLiveClock').disabled = true;
+    log('⏹️ 实时时钟同步已停止');
+  };
+
+  // ===================== 模式控制 (CM_ED02 / CM_ED1E) =====================
+  document.getElementById('btnScreenOn').onclick = () => sendReport(0xED02, [1, 0, 0]);
+  document.getElementById('btnScreenOff').onclick = () => sendReport(0xED02, [1, 0, 1]);
+  document.getElementById('btnSetMode').onclick = () => {
+    const mode = parseInt(document.getElementById('modeSelect').value, 10);
+    sendReport(0xED02, [mode, 0, 0, 0, 0]);
+  };
+  document.getElementById('btnScreenSaverOn').onclick = () => sendReport(0xED1E, [0x02, 0x01, 0x01]);
+  document.getElementById('btnScreenSaverOff').onclick = () => sendReport(0xED1E, [0x02, 0x01, 0x00]);
+
+  // 原始指令发送
+  document.getElementById('btnSendRaw').onclick = () => {
+    const cmdStr = document.getElementById('rawCmdHex').value.trim();
+    const payloadStr = document.getElementById('rawPayloadHex').value.trim();
+    const cmd = parseInt(cmdStr, 16);
+    const payload = payloadStr ? payloadStr.split(/\s+/).map(x => parseInt(x, 16)) : [];
+    sendReport(cmd, payload);
+  };
+
+  document.getElementById('btnClearLog').onclick = () => logConsole.innerHTML = '';
+
+  // 初始渲染
+  renderCanvas();
+</script>
+</body>
+</html>
