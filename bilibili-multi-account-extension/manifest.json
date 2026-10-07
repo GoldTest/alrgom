@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Bilibili 多账号助手 (Bili Multi-Account)",
+  "version": "1.2.0",
+  "description": "B站多账号并行管理插件：支持网页登录自动发现、主账号一键切换、页面悬浮快捷面板、直播间多账号同时发言",
+  "permissions": [
+    "cookies",
+    "storage",
+    "declarativeNetRequest",
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.bilibili.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "B站多账号助手",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.bilibili.com/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

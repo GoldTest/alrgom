@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>B站多账号助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- 头部栏 -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-circle">B</div>
+        <div class="title-wrap">
+          <span class="title">B站多账号助手</span>
+          <span class="version">v1.3</span>
+        </div>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="accounts">账号管理</button>
+        <button class="nav-tab" data-tab="live">直播群控</button>
+        <button class="nav-tab" data-tab="settings">设置</button>
+      </nav>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+      <!-- Tab 1: 账号管理 -->
+      <section id="tab-accounts" class="tab-pane active">
+        <!-- 网页自动捕获与快捷登录操作卡片 -->
+        <div class="quick-login-card">
+          <div class="quick-login-header">
+            <span class="quick-title">网页账号自动同步</span>
+            <span id="browser-login-badge" class="badge-offline">网页未登录</span>
+          </div>
+          <div class="quick-login-desc">
+            直接在网页端用短信或密码登录即可自动捕获，无需手机扫码。
+          </div>
+          <div class="quick-actions-row">
+            <button id="btn-sync-current" class="btn btn-primary btn-sm flex-1" title="读取当前浏览器已登录的B站账号并保存">
+              🔄 抓取当前网页账号
+            </button>
+            <button id="btn-login-new" class="btn btn-secondary btn-sm flex-1" title="安全保存已有账号后，退出当前网页并前往登录新号">
+              ➕ 网页登录新账号
+            </button>
+          </div>
+          <div class="extra-actions-row">
+            <button id="btn-add-account-qr" class="btn-text">
+              📱 备用方式：手机扫码登录
+            </button>
+          </div>
+        </div>
+
+        <div class="section-actions">
+          <span class="section-title">已收录账号列表</span>
+          <span id="account-count-text" class="sub-text">共 0 个账号</span>
+        </div>
+
+        <div id="account-list" class="account-list">
+          <div class="empty-state" id="empty-account-tip">
+            <p>暂无收录的 B站 账号</p>
+            <p class="hint">在网页端登录后点击【抓取当前网页账号】即可自动录入</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 2: 直播群控发言与送礼 -->
+      <section id="tab-live" class="tab-pane">
+        <!-- 当前直播间检测 -->
+        <div class="live-room-box">
+          <div class="box-header">
+            <span class="box-title">目标直播间</span>
+            <button id="btn-refresh-live" class="btn-text">检测当前页面</button>
+          </div>
+          <div class="room-input-group">
+            <input type="text" id="live-room-id" placeholder="输入直播间号 (支持短号)" />
+            <button id="btn-check-room" class="btn btn-secondary">解析</button>
+          </div>
+          <div id="room-status-badge" class="room-status">
+            <span class="status-dot"></span>
+            <span id="room-status-text">未检测到直播间</span>
+          </div>
+        </div>
+
+        <!-- 参与账号提示 -->
+        <div class="active-accounts-bar">
+          <span>当前参与群控: </span>
+          <b id="active-send-count">0</b> <span>个启用账号</span>
+        </div>
+
+        <!-- 弹幕输入 -->
+        <div class="msg-box">
+          <textarea id="danmaku-input" placeholder="输入直播间弹幕内容 (最多20字)..." maxlength="20"></textarea>
+          <div class="msg-footer">
+            <span id="char-counter">0/20</span>
+            <button id="btn-send-danmaku" class="btn btn-primary" disabled>多账号同时发言</button>
+          </div>
+        </div>
+
+        <!-- 免费送礼卡片 -->
+        <div class="gift-box" style="margin-top: 10px; background: #fff; border: 1px solid var(--bili-border); border-radius: var(--radius-md); padding: 10px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-weight: 500; font-size: 12px;">免费礼物群控打赏</div>
+            <div style="font-size: 11px; color: var(--bili-text-disabled);">优先背包免费礼物，其次小心心 (绝不扣费)</div>
+          </div>
+          <button id="btn-send-gift" class="btn btn-secondary btn-sm" style="color: #2ac864; border-color: #a3e7be;">🎁 全号送心意</button>
+        </div>
+
+        <!-- 发送状态日志 -->
+        <div class="send-results" id="send-results-box" style="display: none;">
+          <div class="results-header">操作结果日志</div>
+          <div class="results-list" id="results-list"></div>
+        </div>
+      </section>
+
+      <!-- Tab 3: 设置 -->
+      <section id="tab-settings" class="tab-pane">
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">切换主账号后自动刷新</div>
+            <div class="setting-desc">将账号设为主号时自动刷新当前 B 站标签页</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="setting-auto-refresh" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">群控发言随机延迟 (ms)</div>
+            <div class="setting-desc">多账号依次发送时的防风控间隔范围</div>
+          </div>
+          <div class="range-inputs">
+            <input type="number" id="setting-delay-min" min="200" max="5000" step="100" value="500">
+            <span>~</span>
+            <input type="number" id="setting-delay-max" min="300" max="8000" step="100" value="1500">
+          </div>
+        </div>
+
+        <div class="save-settings-bar">
+          <button id="btn-save-settings" class="btn btn-primary full-width">保存设置</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- 备用：扫码登录弹窗 Modal -->
+    <div id="qr-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>扫码登录 B站 账号</h3>
+          <button id="btn-close-modal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="qrcode-wrapper">
+            <canvas id="qr-canvas"></canvas>
+            <div id="qr-mask" class="qr-mask" style="display: none;">
+              <span id="qr-mask-text">二维码已失效</span>
+              <button id="btn-refresh-qr" class="btn btn-secondary btn-sm">点击刷新</button>
+            </div>
+          </div>
+          <div id="qr-status-msg" class="qr-status-msg">正在生成二维码...</div>
+          <div class="qr-tip">请使用 哔哩哔哩 手机客户端扫码</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../lib/qrcode.js"></script>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
