@@ -4,7 +4,20 @@
  */
 
 (() => {
-  if (document.getElementById('bili-multi-widget-host')) return;
+  // 检查扩展上下文是否有效（防止重载扩展后遗留的孤儿脚本报错）
+  function isExtensionValid() {
+    return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+  }
+
+  if (!isExtensionValid()) return;
+
+  // 清除之前可能注入的旧挂件宿主，避免扩展重载后残留孤儿挂件
+  const existingHost = document.getElementById('bili-multi-widget-host');
+  if (existingHost) {
+    try {
+      existingHost.remove();
+    } catch (_) {}
+  }
 
   function getPageContext() {
     const isLive = window.location.hostname === 'live.bilibili.com';
@@ -269,150 +282,298 @@
       text-overflow: ellipsis;
     }
 
-    .video-control-card {
-      background: #f0f7ff;
-      border: 1px solid #c8e1ff;
-      border-radius: 8px;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .video-btns-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .btn-video-action {
-      flex: 1;
-      padding: 6px 8px;
-      border-radius: 6px;
-      border: none;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
+    .follow-capsule {
+      position: fixed;
+      right: 24px;
+      bottom: 75px;
+      background: rgba(24, 25, 28, 0.88);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #fff;
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      z-index: 2147483647;
+      pointer-events: none;
+      display: none;
       align-items: center;
-      justify-content: center;
-      gap: 4px;
-      transition: all 0.15s;
+      gap: 6px;
+      animation: capsuleFade 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
     }
 
-    .btn-like {
-      background: #00aeec;
-      color: #fff;
-    }
-    .btn-like:hover:not(:disabled) {
-      background: #009ad1;
+    @keyframes capsuleFade {
+      from { opacity: 0; transform: translateY(8px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
-    .btn-triple {
-      background: linear-gradient(135deg, #fb7299 0%, #ff85a7 100%);
-      color: #fff;
-      box-shadow: 0 2px 6px rgba(251, 114, 153, 0.3);
-    }
-    .btn-triple:hover:not(:disabled) {
-      background: #f95c89;
-    }
-
-    .btn-video-action:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .live-control-card {
-      background: #fdf2f5;
-      border: 1px solid #ffd6e3;
-      border-radius: 8px;
-      padding: 10px;
+    .live-accounts-section {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-    }
-
-    .quick-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-    }
-
-    .tag-btn {
-      background: #fff;
-      border: 1px solid #ffd1df;
-      color: #fb7299;
-      border-radius: 10px;
-      font-size: 11px;
-      padding: 2px 7px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .tag-btn:hover {
-      background: #fb7299;
-      color: #fff;
-    }
-
-    .msg-input-wrap {
-      display: flex;
       gap: 6px;
     }
 
-    .danmaku-txt {
-      flex: 1;
-      border: 1px solid #ffd6e3;
-      border-radius: 6px;
-      padding: 5px 8px;
-      font-size: 12px;
-      outline: none;
+    .live-accounts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 250px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .live-account-card {
+      background: #fafbfc;
+      border: 1px solid #e3e5e7;
+      border-radius: 8px;
+      padding: 7px 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.16s ease;
+    }
+
+    .live-account-card:hover {
       background: #fff;
-    }
-
-    .danmaku-txt:focus {
       border-color: #fb7299;
+      box-shadow: 0 2px 8px rgba(251, 114, 153, 0.12);
     }
 
-    .btn-send-mini {
+    .live-account-card.is-current {
+      background: #fff8fa;
+      border-color: #fb7299;
+      box-shadow: 0 0 0 1px #fb7299;
+    }
+
+    .live-card-main-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .live-avatar-wrap {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+    }
+
+    .live-avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid #e3e5e7;
+    }
+
+    .live-info-col {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      flex: 1;
+      gap: 2px;
+    }
+
+    .live-name-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .live-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #18191c;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 80px;
+    }
+
+    .live-status-pill {
+      font-size: 9px;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .status-pill-online {
+      background: #eaf8ee;
+      color: #2ac864;
+    }
+
+    .status-pill-current {
+      background: #fff0f4;
+      color: #fb7299;
+    }
+
+    .status-pill-expired {
+      background: #fff1f0;
+      color: #ff4d4f;
+    }
+
+    .live-assets-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .live-asset-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .asset-tag-battery {
+      background: #fff7e6;
+      color: #fa8c16;
+      border: 1px solid #ffe7ba;
+    }
+
+    .asset-tag-bag {
+      background: #e6f7ff;
+      color: #1890ff;
+      border: 1px solid #bae7ff;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .asset-tag-bag:hover {
+      background: #bae7ff;
+      border-color: #91d5ff;
+      transform: translateY(-1px);
+    }
+
+    /* 背包道具展开抽屉 */
+    .bag-drawer {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      background: #f4f6f8;
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin-top: 2px;
+      border: 1px solid #eaedf1;
+      animation: drawerFade 0.15s ease;
+    }
+
+    @keyframes drawerFade {
+      from { opacity: 0; transform: translateY(-3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .bag-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 4px 0;
+      border-bottom: 1px dashed #e3e5e7;
+    }
+
+    .bag-item-row:last-child {
+      border-bottom: none;
+    }
+
+    .bag-item-info {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .bag-item-name {
+      font-size: 11px;
+      font-weight: 500;
+      color: #18191c;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bag-item-num {
+      font-size: 10px;
+      font-weight: 600;
+      color: #fb7299;
+    }
+
+    .bag-item-expire {
+      font-size: 9px;
+      color: #9499a0;
+      white-space: nowrap;
+    }
+
+    .bag-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .btn-send-gift-mini {
       background: #fb7299;
       color: #fff;
       border: none;
-      border-radius: 6px;
-      font-size: 11px;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 10px;
       font-weight: 600;
-      padding: 5px 9px;
       cursor: pointer;
-      white-space: nowrap;
       transition: background 0.15s;
+      white-space: nowrap;
     }
 
-    .btn-send-mini:hover:not(:disabled) {
+    .btn-send-gift-mini:hover:not(:disabled) {
       background: #f95c89;
     }
 
-    .btn-send-mini:disabled {
+    .btn-send-gift-mini:disabled {
       background: #f7a8c0;
       cursor: not-allowed;
     }
 
-    .btn-gift-mini {
-      background: #2ac864;
+    .btn-send-gift-all {
+      background: #00aeec;
       color: #fff;
       border: none;
-      border-radius: 6px;
-      font-size: 11px;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 10px;
       font-weight: 600;
-      padding: 4px 8px;
       cursor: pointer;
       transition: background 0.15s;
+      white-space: nowrap;
     }
 
-    .btn-gift-mini:hover:not(:disabled) {
-      background: #23b056;
+    .btn-send-gift-all:hover:not(:disabled) {
+      background: #009ad1;
     }
 
-    .btn-gift-mini:disabled {
-      background: #a3e7be;
+    .btn-send-gift-all:disabled {
+      background: #80d7f6;
       cursor: not-allowed;
+    }
+
+    .bag-empty-tip {
+      font-size: 10px;
+      color: #9499a0;
+      text-align: center;
+      padding: 4px 0;
     }
 
     .actions-footer {
@@ -490,8 +651,8 @@
 
       <!-- 主体 -->
       <div class="panel-body">
-        <!-- 账号快速切换 -->
-        <div>
+        <!-- 普通页面横向快速切号栏 (非直播间显示) -->
+        <div id="normal-accounts-box">
           <div class="section-label">
             <span>快捷切号 (点击即切)</span>
             <span id="accounts-count-label" style="font-size: 10px; color: #9499a0;">0个</span>
@@ -501,39 +662,14 @@
           </div>
         </div>
 
-        <!-- 视频操作卡片 (仅视频播放页显示) -->
-        <div id="video-section" class="video-control-card" style="display: none;">
-          <div class="section-label" style="color: #00aeec; margin-bottom: 2px;">
-            <span>当前视频群控 (<b id="video-account-count">0</b>号就绪)</span>
+        <!-- 直播间各账号连接状态与资产看板 (仅直播间显示) -->
+        <div id="live-accounts-section" class="live-accounts-section" style="display: none;">
+          <div class="section-label" style="color: #fb7299; margin-bottom: 2px;">
+            <span>各账号连接与资产状态</span>
+            <span id="btn-refresh-live-assets" style="font-size: 10px; color: #9499a0; cursor: pointer;" title="点击重新查询各账号电池与背包">🔄 刷新</span>
           </div>
-          <div style="font-size: 10px; color: #61666d;" id="video-bvid-text">BV...</div>
-          <div class="video-btns-row">
-            <button id="btn-video-like" class="btn-video-action btn-like">👍 全号点赞</button>
-            <button id="btn-video-triple" class="btn-video-action btn-triple">⚡ 全号三连</button>
-          </div>
-        </div>
-
-        <!-- 直播间快捷发言与送礼卡片 (仅直播间显示) -->
-        <div id="live-section" class="live-control-card" style="display: none;">
-          <div class="section-label" style="color: #c93b68; margin-bottom: 2px;">
-            <span>直播间快捷同发 (<b id="live-account-count">0</b>号就绪)</span>
-          </div>
-          <div class="quick-tags">
-            <button class="tag-btn" data-msg="666">666</button>
-            <button class="tag-btn" data-msg="哈哈哈">哈哈哈</button>
-            <button class="tag-btn" data-msg="打卡">打卡</button>
-            <button class="tag-btn" data-msg="好听">好听</button>
-            <button class="tag-btn" data-msg="太强了">太强了</button>
-            <button class="tag-btn" data-msg="点赞">点赞</button>
-          </div>
-          <div class="msg-input-wrap">
-            <input type="text" id="danmaku-quick-input" class="danmaku-txt" placeholder="输入弹幕内容..." maxlength="20" />
-            <button id="btn-quick-send" class="btn-send-mini">全发</button>
-          </div>
-          <!-- 免费礼物打赏行 -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #ffd1df; padding-top: 6px; margin-top: 2px;">
-            <span style="font-size: 11px; color: #c93b68;">免费礼物心意:</span>
-            <button id="btn-quick-gift" class="btn-gift-mini" title="为各账号赠送背包免费道具或小心心 (安全绝不扣费)">🎁 全号送小心心</button>
+          <div id="live-accounts-list" class="live-accounts-list">
+            <div style="color: #9499a0; font-size: 11px; padding: 8px 0; text-align: center;">正在读取各账号资产...</div>
           </div>
         </div>
 
@@ -544,6 +680,9 @@
         </div>
       </div>
     </div>
+
+    <!-- 主号点赞时副号自动跟随的轻量胶囊提示 (非侵入式浮现) -->
+    <div id="follow-capsule" class="follow-capsule"></div>
   `;
 
   const fab = shadow.getElementById('widget-fab');
@@ -555,21 +694,26 @@
   const mainAvatar = shadow.getElementById('panel-main-avatar');
   const mainName = shadow.getElementById('panel-main-name');
   const mainTag = shadow.getElementById('panel-main-tag');
+
+  const normalAccountsBox = shadow.getElementById('normal-accounts-box');
   const accountsScroll = shadow.getElementById('accounts-scroll');
   const accountsCountLabel = shadow.getElementById('accounts-count-label');
 
-  const videoSection = shadow.getElementById('video-section');
-  const videoAccountCount = shadow.getElementById('video-account-count');
-  const videoBvidText = shadow.getElementById('video-bvid-text');
-  const btnVideoLike = shadow.getElementById('btn-video-like');
-  const btnVideoTriple = shadow.getElementById('btn-video-triple');
+  const liveAccountsSection = shadow.getElementById('live-accounts-section');
+  const liveAccountsList = shadow.getElementById('live-accounts-list');
+  const btnRefreshLiveAssets = shadow.getElementById('btn-refresh-live-assets');
 
-  const liveSection = shadow.getElementById('live-section');
-  const liveAccountCount = shadow.getElementById('live-account-count');
-  const quickInput = shadow.getElementById('danmaku-quick-input');
-  const quickSendBtn = shadow.getElementById('btn-quick-send');
-  const btnQuickGift = shadow.getElementById('btn-quick-gift');
-  const tagBtns = shadow.querySelectorAll('.tag-btn');
+  const followCapsule = shadow.getElementById('follow-capsule');
+  let capsuleTimer = null;
+  function showFollowCapsule(text, duration = 2800) {
+    if (!followCapsule) return;
+    if (capsuleTimer) clearTimeout(capsuleTimer);
+    followCapsule.innerHTML = text;
+    followCapsule.style.display = 'inline-flex';
+    capsuleTimer = setTimeout(() => {
+      followCapsule.style.display = 'none';
+    }, duration);
+  }
 
   const btnQuickSync = shadow.getElementById('btn-quick-sync');
   const btnQuickLoginNew = shadow.getElementById('btn-quick-login-new');
@@ -595,229 +739,456 @@
     fab.style.display = 'flex';
   });
 
-  async function refreshData() {
-    try {
-      const pageCtx = getPageContext();
-      const res = await chrome.storage.local.get({ accounts: [] });
-      const accounts = res.accounts || [];
+  let isFetchingLiveAssets = false;
 
-      const enabledAccounts = accounts.filter(a => a.enabled);
-      badge.textContent = enabledAccounts.length;
-      accountsCountLabel.textContent = `${accounts.length}个`;
+  async function renderLiveAccountsAssets() {
+    if (!isExtensionValid() || !liveAccountsList) return;
+    if (isFetchingLiveAssets) return;
+    isFetchingLiveAssets = true;
 
-      if (pageCtx.isLive) {
-        liveSection.style.display = 'flex';
-        videoSection.style.display = 'none';
-        liveAccountCount.textContent = enabledAccounts.length;
-      } else if (pageCtx.isVideo) {
-        liveSection.style.display = 'none';
-        videoSection.style.display = 'flex';
-        videoAccountCount.textContent = enabledAccounts.length;
-        videoBvidText.textContent = `稿件: ${pageCtx.bvid}`;
-      } else {
-        liveSection.style.display = 'none';
-        videoSection.style.display = 'none';
-      }
-
-      const current = accounts.find(a => a.isCurrent);
-      if (current) {
-        mainAvatar.src = current.face || 'https://static.hdslb.com/images/member/noface.gif';
-        mainName.textContent = current.uname;
-        mainTag.textContent = '当前主账号 (网页生效中)';
-        mainTag.style.color = '#2ac864';
-      } else {
-        mainAvatar.src = 'https://static.hdslb.com/images/member/noface.gif';
-        mainName.textContent = '未登录 / 未设置主号';
-        mainTag.textContent = '点击下方头像可一键切换';
-        mainTag.style.color = '#9499a0';
-      }
-
-      if (accounts.length === 0) {
-        accountsScroll.innerHTML = '<div style="color: #9499a0; font-size: 11px; padding: 6px 0;">暂无账号，点击下方登录</div>';
-      } else {
-        accountsScroll.innerHTML = '';
-        accounts.forEach(acc => {
-          const item = document.createElement('div');
-          item.className = `account-item ${acc.isCurrent ? 'is-current' : ''}`;
-          item.title = `点击切换为【${acc.uname}】`;
-          item.innerHTML = `
-            <div class="item-avatar-wrap">
-              <img class="item-avatar" src="${acc.face}" onerror="this.src='https://static.hdslb.com/images/member/noface.gif'" />
-              ${acc.isCurrent ? '<span class="badge-curr">主</span>' : ''}
-            </div>
-            <span class="item-name">${acc.uname}</span>
-          `;
-
-          item.addEventListener('click', async () => {
-            if (acc.isCurrent) {
-              showToast(`当前已是【${acc.uname}】`);
-              return;
-            }
-            showToast(`正在切换为【${acc.uname}】...`);
-            try {
-              const switchRes = await chrome.runtime.sendMessage({
-                action: 'SWITCH_MAIN_ACCOUNT',
-                mid: acc.mid
-              });
-              if (switchRes.success) {
-                showToast(`已切换为【${acc.uname}】！刷新中...`);
-              } else {
-                showToast(`切换失败: ${switchRes.error || '未知原因'}`);
-              }
-            } catch (err) {
-              showToast(`异常: ${err.message}`);
-            }
-          });
-
-          accountsScroll.appendChild(item);
-        });
-      }
-    } catch (e) {
-      console.warn('刷新挂件数据失败:', e);
-    }
-  }
-
-  // 视频操作
-  async function handleVideoAction(type) {
-    const pageCtx = getPageContext();
-    if (!pageCtx.isVideo || !pageCtx.bvid) {
-      showToast('未检测到有效视频 BV 号');
-      return;
-    }
-
-    const btn = type === 'like' ? btnVideoLike : btnVideoTriple;
-    const actionName = type === 'like' ? '点赞' : '三连';
-
-    btn.disabled = true;
-    btn.textContent = `${actionName}中...`;
-    showToast(`正在调度各账号执行【${actionName}】...`);
+    liveAccountsList.innerHTML = '<div style="color: #9499a0; font-size: 11px; padding: 10px 0; text-align: center;">正在同步各账号连接与资产...</div>';
 
     try {
-      const msgAction = type === 'like' ? 'SEND_VIDEO_LIKE_ALL' : 'SEND_VIDEO_TRIPLE_ALL';
-      const res = await chrome.runtime.sendMessage({
-        action: msgAction,
-        bvid: pageCtx.bvid
-      });
-
-      if (res && res.results) {
-        const successes = res.results.filter(r => r.success).length;
-        const total = res.results.length;
-        showToast(`✔ 成功${actionName}: ${successes}/${total} 个账号`);
-      } else {
-        showToast(res?.message || `${actionName}失败`);
-      }
-    } catch (err) {
-      showToast(`${actionName}异常: ${err.message}`);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = type === 'like' ? '👍 全号点赞' : '⚡ 全号三连';
-    }
-  }
-
-  if (btnVideoLike) btnVideoLike.addEventListener('click', () => handleVideoAction('like'));
-  if (btnVideoTriple) btnVideoTriple.addEventListener('click', () => handleVideoAction('triple'));
-
-  // 直播发言
-  async function sendQuickDanmaku(text) {
-    const msg = (text || quickInput.value || '').trim();
-    if (!msg) {
-      showToast('请输入弹幕内容');
-      return;
-    }
-
-    const pageCtx = getPageContext();
-    if (!pageCtx.isLive || !pageCtx.liveShortId) {
-      showToast('未检测到直播间房间号');
-      return;
-    }
-
-    quickSendBtn.disabled = true;
-    quickSendBtn.textContent = '发送中';
-    showToast('多账号正在依次发言...');
-
-    try {
-      const roomRes = await chrome.runtime.sendMessage({
-        action: 'GET_REAL_ROOM_ID',
-        roomId: pageCtx.liveShortId
-      });
-      const realRoomId = roomRes?.realRoomId || pageCtx.liveShortId;
-
-      const sendRes = await chrome.runtime.sendMessage({
-        action: 'SEND_DANMAKU_ALL',
-        roomId: realRoomId,
-        message: msg
-      });
-
-      if (sendRes && sendRes.results) {
-        const successes = sendRes.results.filter(r => r.success).length;
-        const total = sendRes.results.length;
-        showToast(`✔ 成功发送: ${successes}/${total} 个账号`);
-        if (sendRes.success) {
-          quickInput.value = '';
-        }
-      } else {
-        showToast(sendRes?.message || '发送失败');
-      }
-    } catch (err) {
-      showToast(`发送失败: ${err.message}`);
-    } finally {
-      quickSendBtn.disabled = false;
-      quickSendBtn.textContent = '全发';
-    }
-  }
-
-  if (quickSendBtn) quickSendBtn.addEventListener('click', () => sendQuickDanmaku());
-  if (quickInput) {
-    quickInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        sendQuickDanmaku();
-      }
-    });
-  }
-
-  tagBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const msg = btn.dataset.msg;
-      quickInput.value = msg;
-      sendQuickDanmaku(msg);
-    });
-  });
-
-  // 直播免费礼物赠送
-  if (btnQuickGift) {
-    btnQuickGift.addEventListener('click', async () => {
-      const pageCtx = getPageContext();
-      if (!pageCtx.isLive || !pageCtx.liveShortId) {
-        showToast('未检测到直播间房间号');
+      const res = await chrome.runtime.sendMessage({ action: 'GET_ACCOUNTS_LIVE_STATUS' });
+      if (!res || !res.success || !Array.isArray(res.accounts) || res.accounts.length === 0) {
+        liveAccountsList.innerHTML = '<div style="color: #9499a0; font-size: 11px; padding: 10px 0; text-align: center;">暂无账号，点击下方登录新号</div>';
         return;
       }
 
-      btnQuickGift.disabled = true;
-      btnQuickGift.textContent = '赠送中...';
-      showToast('正在调度各账号送出免费心意礼物...');
+      liveAccountsList.innerHTML = '';
+      res.accounts.forEach(acc => {
+        const card = document.createElement('div');
+        card.className = `live-account-card ${acc.isCurrent ? 'is-current' : ''}`;
 
-      try {
-        const res = await chrome.runtime.sendMessage({
-          action: 'SEND_FREE_GIFT_ALL',
-          roomId: pageCtx.liveShortId
+        let statusPillClass = 'status-pill-online';
+        let statusText = '● 在线';
+        if (acc.isCurrent) {
+          statusPillClass = 'status-pill-current';
+          statusText = '● 主号';
+        } else if (acc.status === 'expired') {
+          statusPillClass = 'status-pill-expired';
+          statusText = '● 凭据失效';
+        }
+
+        const bagCount = acc.bagCount ?? 0;
+        const bagItems = Array.isArray(acc.bagItems) ? acc.bagItems : [];
+
+        // 主信息行
+        const mainRow = document.createElement('div');
+        mainRow.className = 'live-card-main-row';
+        mainRow.title = acc.isCurrent ? '当前正在生效的主账号' : `点击一键切换为【${acc.uname || acc.mid}】`;
+        mainRow.innerHTML = `
+          <div class="live-avatar-wrap">
+            <img class="live-avatar" src="${acc.face || 'https://static.hdslb.com/images/member/noface.gif'}" onerror="this.src='https://static.hdslb.com/images/member/noface.gif'" />
+          </div>
+          <div class="live-info-col">
+            <div class="live-name-row">
+              <span class="live-name" title="${acc.uname || acc.mid}">${acc.uname || acc.mid}</span>
+              <span class="live-status-pill ${statusPillClass}">${statusText}</span>
+            </div>
+          </div>
+          <div class="live-assets-row">
+            <span class="live-asset-tag asset-tag-battery" title="直播间当前电池余额">🔋 ${acc.battery ?? 0}电池</span>
+            <span class="live-asset-tag asset-tag-bag" title="点击展开/折叠背包道具明细">🎒 <b class="bag-count-num">${bagCount}</b>件 ▾</span>
+          </div>
+        `;
+
+        // 背包抽屉容器
+        const drawer = document.createElement('div');
+        drawer.className = 'bag-drawer';
+
+        // 渲染背包道具列表
+        function renderDrawerItems() {
+          if (bagItems.length === 0) {
+            drawer.innerHTML = '<div class="bag-empty-tip">背包暂无可用道具</div>';
+            return;
+          }
+
+          drawer.innerHTML = '';
+          bagItems.forEach((item, itemIdx) => {
+            const itemRow = document.createElement('div');
+            itemRow.className = 'bag-item-row';
+
+            let expireText = '';
+            if (item.expire_at) {
+              const diffSec = item.expire_at - Math.floor(Date.now() / 1000);
+              if (diffSec > 0) {
+                const days = Math.floor(diffSec / 86400);
+                const hours = Math.floor((diffSec % 86400) / 3600);
+                expireText = days > 0 ? `${days}天后到期` : `${hours}小时后到期`;
+              } else {
+                expireText = '即将到期';
+              }
+            }
+
+            itemRow.innerHTML = `
+              <div class="bag-item-info">
+                <span class="bag-item-name" title="${item.gift_name}">🎁 ${item.gift_name}</span>
+                <span class="bag-item-num">x<span class="gift-num-text">${item.gift_num}</span></span>
+                ${expireText ? `<span class="bag-item-expire">(${expireText})</span>` : ''}
+              </div>
+              <div class="bag-item-actions">
+                <button class="btn-send-gift-mini btn-send-one" title="送出 1 个给当前主播">送1个</button>
+                ${item.gift_num > 1 ? '<button class="btn-send-gift-all btn-send-all" title="全部送出给当前主播">全送</button>' : ''}
+              </div>
+            `;
+
+            // 处理送礼
+            async function handleSend(sendCount, targetBtn) {
+              const pageCtx = getPageContext();
+              if (!pageCtx.isLive || !pageCtx.liveShortId) {
+                showToast('未检测到直播间房间号');
+                return;
+              }
+
+              targetBtn.disabled = true;
+              targetBtn.textContent = '...';
+
+              try {
+                const res = await chrome.runtime.sendMessage({
+                  action: 'SEND_SINGLE_BAG_GIFT',
+                  mid: acc.mid,
+                  roomId: pageCtx.liveShortId,
+                  bagId: item.bag_id,
+                  giftId: item.gift_id,
+                  giftNum: sendCount
+                });
+
+                if (res && res.success) {
+                  showToast(`✔【${acc.uname || acc.mid}】已送出【${item.gift_name}】x${sendCount}`);
+                  
+                  // 局部更新该礼物数量
+                  item.gift_num -= sendCount;
+                  acc.bagCount = Math.max(0, (acc.bagCount || 0) - sendCount);
+                  
+                  // 更新主卡片上的背包数量徽章
+                  const badgeNum = mainRow.querySelector('.bag-count-num');
+                  if (badgeNum) badgeNum.textContent = acc.bagCount;
+
+                  if (item.gift_num <= 0) {
+                    bagItems.splice(itemIdx, 1);
+                  }
+                  renderDrawerItems();
+                } else {
+                  showToast(res?.message || '赠送失败');
+                  targetBtn.disabled = false;
+                  targetBtn.textContent = sendCount === 1 ? '送1个' : '全送';
+                }
+              } catch (err) {
+                showToast(`赠送异常: ${err.message}`);
+                targetBtn.disabled = false;
+                targetBtn.textContent = sendCount === 1 ? '送1个' : '全送';
+              }
+            }
+
+            const btnOne = itemRow.querySelector('.btn-send-one');
+            if (btnOne) {
+              btnOne.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleSend(1, btnOne);
+              });
+            }
+
+            const btnAll = itemRow.querySelector('.btn-send-all');
+            if (btnAll) {
+              btnAll.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleSend(item.gift_num, btnAll);
+              });
+            }
+
+            drawer.appendChild(itemRow);
+          });
+        }
+
+        renderDrawerItems();
+
+        // 点击背包标签展开/折叠抽屉
+        const bagTag = mainRow.querySelector('.asset-tag-bag');
+        if (bagTag) {
+          bagTag.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = drawer.style.display === 'flex';
+            drawer.style.display = isOpen ? 'none' : 'flex';
+            bagTag.innerHTML = `🎒 <b class="bag-count-num">${acc.bagCount ?? 0}</b>件 ${isOpen ? '▾' : '▴'}`;
+          });
+        }
+
+        // 点击卡片主行执行切号
+        mainRow.addEventListener('click', async () => {
+          if (!isExtensionValid()) {
+            showToast('插件已重载，请按F5刷新页面');
+            return;
+          }
+          if (acc.isCurrent) {
+            showToast(`当前已是【${acc.uname || acc.mid}】`);
+            return;
+          }
+          showToast(`正在切换为【${acc.uname || acc.mid}】...`);
+          try {
+            const switchRes = await chrome.runtime.sendMessage({
+              action: 'SWITCH_MAIN_ACCOUNT',
+              mid: acc.mid
+            });
+            if (switchRes && switchRes.success) {
+              showToast(`已切换为【${acc.uname || acc.mid}】！刷新中...`);
+            } else {
+              showToast(`切换失败: ${switchRes?.error || '未知原因'}`);
+            }
+          } catch (err) {
+            showToast(`异常: ${err.message}`);
+          }
         });
 
-        if (res && res.results) {
-          const successes = res.results.filter(r => r.success).length;
-          const total = res.results.length;
-          showToast(`✔ 礼物送出完成: ${successes}/${total} 个账号`);
-        } else {
-          showToast(res?.message || '礼物赠送失败');
-        }
-      } catch (err) {
-        showToast(`送礼异常: ${err.message}`);
-      } finally {
-        btnQuickGift.disabled = false;
-        btnQuickGift.textContent = '🎁 全号送小心心';
-      }
+        card.appendChild(mainRow);
+        card.appendChild(drawer);
+        liveAccountsList.appendChild(card);
+      });
+    } catch (_) {
+      liveAccountsList.innerHTML = '<div style="color: #ff4d4f; font-size: 11px; padding: 10px 0; text-align: center;">读取资产失败，请重试</div>';
+    } finally {
+      isFetchingLiveAssets = false;
+    }
+  }
+
+  if (btnRefreshLiveAssets) {
+    btnRefreshLiveAssets.addEventListener('click', () => {
+      renderLiveAccountsAssets();
     });
   }
+
+  async function refreshData() {
+    if (!isExtensionValid()) return;
+    try {
+      const pageCtx = getPageContext();
+      const res = await chrome.storage.local.get({ accounts: [] });
+      const accounts = Array.isArray(res?.accounts) ? res.accounts : [];
+
+      const enabledAccounts = accounts.filter(a => a && a.enabled);
+      if (badge) badge.textContent = enabledAccounts.length;
+      if (accountsCountLabel) accountsCountLabel.textContent = `${accounts.length}个`;
+
+      if (pageCtx.isLive) {
+        if (normalAccountsBox) normalAccountsBox.style.display = 'none';
+        if (liveAccountsSection) liveAccountsSection.style.display = 'flex';
+        renderLiveAccountsAssets();
+      } else {
+        if (normalAccountsBox) normalAccountsBox.style.display = 'block';
+        if (liveAccountsSection) liveAccountsSection.style.display = 'none';
+      }
+
+      const current = accounts.find(a => a && a.isCurrent);
+      if (current) {
+        if (mainAvatar) mainAvatar.src = current.face || 'https://static.hdslb.com/images/member/noface.gif';
+        if (mainName) mainName.textContent = current.uname || 'B站用户';
+        if (mainTag) {
+          mainTag.textContent = '当前主账号 (网页生效中)';
+          mainTag.style.color = '#2ac864';
+        }
+      } else {
+        if (mainAvatar) mainAvatar.src = 'https://static.hdslb.com/images/member/noface.gif';
+        if (mainName) mainName.textContent = '未登录 / 未设置主号';
+        if (mainTag) {
+          mainTag.textContent = '点击下方头像可一键切换';
+          mainTag.style.color = '#9499a0';
+        }
+      }
+
+      if (accountsScroll) {
+        if (accounts.length === 0) {
+          accountsScroll.innerHTML = '<div style="color: #9499a0; font-size: 11px; padding: 6px 0;">暂无账号，点击下方登录</div>';
+        } else {
+          accountsScroll.innerHTML = '';
+          accounts.filter(a => a && a.mid).forEach(acc => {
+            const item = document.createElement('div');
+            item.className = `account-item ${acc.isCurrent ? 'is-current' : ''}`;
+            item.title = `点击切换为【${acc.uname || acc.mid}】`;
+            item.innerHTML = `
+              <div class="item-avatar-wrap">
+                <img class="item-avatar" src="${acc.face || 'https://static.hdslb.com/images/member/noface.gif'}" onerror="this.src='https://static.hdslb.com/images/member/noface.gif'" />
+                ${acc.isCurrent ? '<span class="badge-curr">主</span>' : ''}
+              </div>
+              <span class="item-name">${acc.uname || acc.mid}</span>
+            `;
+
+            item.addEventListener('click', async () => {
+              if (!isExtensionValid()) {
+                showToast('插件已重载，请按F5刷新页面');
+                return;
+              }
+              if (acc.isCurrent) {
+                showToast(`当前已是【${acc.uname || acc.mid}】`);
+                return;
+              }
+              showToast(`正在切换为【${acc.uname || acc.mid}】...`);
+              try {
+                const switchRes = await chrome.runtime.sendMessage({
+                  action: 'SWITCH_MAIN_ACCOUNT',
+                  mid: acc.mid
+                });
+                if (switchRes && switchRes.success) {
+                  showToast(`已切换为【${acc.uname || acc.mid}】！刷新中...`);
+                } else {
+                  showToast(`切换失败: ${switchRes?.error || '未知原因'}`);
+                }
+              } catch (err) {
+                showToast(`异常: ${err.message}`);
+              }
+            });
+
+            accountsScroll.appendChild(item);
+          });
+        }
+      }
+    } catch (_) {
+      // 静默处理，避免 Chrome 扩展管理面板将刷新重试当成错误红标记录
+    }
+  }
+
+  // 监听来自后台的自动跟随点赞/取消点赞/直播弹幕结果通知 (轻量胶囊气泡浮现，绝不弹窗打扰)
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'NOTIFY_FOLLOW_LIKE_RESULT' && msg.data) {
+      const { successCount, failedCount, total, lastFailReason, likeAction } = msg.data;
+      const isUnlike = (likeAction === 2);
+      const actionName = isUnlike ? '取消点赞' : '点赞';
+
+      if (total > 0) {
+        if (successCount > 0 && failedCount === 0) {
+          showFollowCapsule(`<span>👍</span><span>副账号已跟随${actionName} (${successCount}/${total})</span>`, 2800);
+        } else if (successCount > 0 && failedCount > 0) {
+          showFollowCapsule(`<span>👍</span><span>副账号已跟随${actionName} (${successCount}/${total})</span><span style="opacity:0.8;font-size:10px;">(部分异常)</span>`, 3200);
+        } else {
+          showFollowCapsule(`<span>⚠️</span><span>副账号跟随${actionName}失败: ${lastFailReason || '请检查副账号状态'}</span>`, 3600);
+        }
+      }
+    } else if (msg.action === 'NOTIFY_FOLLOW_DANMAKU_RESULT' && msg.data) {
+      const { successCount, failedCount, total, lastFailReason } = msg.data;
+      if (total > 0) {
+        if (successCount > 0 && failedCount === 0) {
+          showFollowCapsule(`<span>💬</span><span>副账号已跟随发言 (${successCount}/${total})</span>`, 2800);
+        } else if (successCount > 0 && failedCount > 0) {
+          showFollowCapsule(`<span>💬</span><span>副账号已跟随发言 (${successCount}/${total})</span><span style="opacity:0.8;font-size:10px;">(部分异常)</span>`, 3200);
+        } else {
+          showFollowCapsule(`<span>⚠️</span><span>副账号跟随发言失败: ${lastFailReason || '请检查副账号状态'}</span>`, 3600);
+        }
+      }
+    }
+  });
+
+  // 监听网页原生主账号点赞/取消点赞动作 (点击点赞按钮或快捷键 'q'，作为双重兜底感知)
+  function setupNativeLikeDetector() {
+    // 监听页面点击事件
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!target) return;
+      const likeBtn = target.closest(
+        '.video-like, .like-item, .video-like-info, [aria-label*="点赞"], [title*="点赞"], .toolbar-left-item-wrap .like'
+      );
+      if (likeBtn) {
+        const pageCtx = getPageContext();
+        if (pageCtx.isVideo && pageCtx.bvid) {
+          // 判断当前按钮是否已经处于激活状态（若已激活，则点击是取消点赞）
+          const isCurrentlyLiked = likeBtn.classList.contains('on') ||
+            likeBtn.classList.contains('active') ||
+            likeBtn.classList.contains('is-active') ||
+            likeBtn.getAttribute('aria-pressed') === 'true';
+
+          const likeAction = isCurrentlyLiked ? 2 : 1;
+
+          chrome.runtime.sendMessage({
+            action: 'TRIGGER_AUTO_FOLLOW_LIKE',
+            bvid: pageCtx.bvid,
+            likeAction
+          }).catch(() => {});
+        }
+      }
+    }, true);
+
+    // 监听键盘快捷键 'q' (B站视频默认点赞快捷键)
+    document.addEventListener('keydown', (e) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+        return;
+      }
+      if (e.key === 'q' || e.key === 'Q') {
+        const pageCtx = getPageContext();
+        if (pageCtx.isVideo && pageCtx.bvid) {
+          const likeBtn = document.querySelector(
+            '.video-like, .like-item, .video-like-info, [aria-label*="点赞"], [title*="点赞"]'
+          );
+          const isCurrentlyLiked = likeBtn ? (
+            likeBtn.classList.contains('on') ||
+            likeBtn.classList.contains('active') ||
+            likeBtn.classList.contains('is-active') ||
+            likeBtn.getAttribute('aria-pressed') === 'true'
+          ) : false;
+
+          const likeAction = isCurrentlyLiked ? 2 : 1;
+
+          chrome.runtime.sendMessage({
+            action: 'TRIGGER_AUTO_FOLLOW_LIKE',
+            bvid: pageCtx.bvid,
+            likeAction
+          }).catch(() => {});
+        }
+      }
+    }, true);
+  }
+
+  // 监听网页原生直播间弹幕输入与发送交互 (作为双重兜底感知)
+  function setupNativeDanmakuDetector() {
+    // 监听原生发送按钮点击
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!target) return;
+      const sendBtn = target.closest(
+        '.chat-input-cntr .bottom-actions .btn-section, .chat-input-border .send-btn, [class*="send-btn"], .control-panel-ctnr .danmaku-send'
+      );
+      if (sendBtn) {
+        const pageCtx = getPageContext();
+        if (pageCtx.isLive && pageCtx.liveShortId) {
+          const inputEl = document.querySelector(
+            '.chat-input-border textarea, .chat-input, textarea[placeholder*="弹幕"], input[placeholder*="弹幕"]'
+          );
+          const msg = inputEl ? inputEl.value.trim() : '';
+          if (msg) {
+            chrome.runtime.sendMessage({
+              action: 'TRIGGER_AUTO_FOLLOW_DANMAKU',
+              roomId: pageCtx.liveShortId,
+              message: msg
+            }).catch(() => {});
+          }
+        }
+      }
+    }, true);
+
+    // 监听原生弹幕输入框的回车按键发送
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const target = e.target;
+        if (!target) return;
+        const isDanmakuInput = target.matches(
+          '.chat-input-border textarea, .chat-input, textarea[placeholder*="弹幕"], input[placeholder*="弹幕"]'
+        );
+        if (isDanmakuInput) {
+          const pageCtx = getPageContext();
+          if (pageCtx.isLive && pageCtx.liveShortId) {
+            const msg = target.value.trim();
+            if (msg) {
+              chrome.runtime.sendMessage({
+                action: 'TRIGGER_AUTO_FOLLOW_DANMAKU',
+                roomId: pageCtx.liveShortId,
+                message: msg
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+    }, true);
+  }
+
+  setupNativeLikeDetector();
+  setupNativeDanmakuDetector();
 
   // 底部动作
   btnQuickSync.addEventListener('click', async () => {
@@ -847,10 +1218,13 @@
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (!isExtensionValid()) return;
     if (area === 'local' && changes.accounts) {
       refreshData();
     }
   });
 
-  refreshData();
+  if (isExtensionValid()) {
+    refreshData();
+  }
 })();

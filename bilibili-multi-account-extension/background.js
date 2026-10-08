@@ -41,12 +41,14 @@ async function setTargetCookieRule(account) {
         type: 'modifyHeaders',
         requestHeaders: [
           { header: 'Cookie', operation: 'set', value: cookieStr },
+          { header: 'Origin', operation: 'set', value: 'https://www.bilibili.com' },
+          { header: 'Referer', operation: 'set', value: 'https://www.bilibili.com' },
           { header: 'User-Agent', operation: 'set', value: navigator.userAgent }
         ]
       },
       condition: {
         urlFilter: 'bilibili.com',
-        resourceTypes: ['xmlhttprequest']
+        resourceTypes: ['xmlhttprequest', 'other']
       }
     }]
   });
@@ -289,11 +291,11 @@ async function sendSingleDanmaku(account, roomId, message) {
     roomid: String(roomId),
     rnd: String(Math.floor(Date.now() / 1000)),
     fontsize: '25',
-    csrf: account.bili_jct,
-    csrf_token: account.bili_jct
+    csrf: account.bili_jct || '',
+    csrf_token: account.bili_jct || ''
   });
 
-  const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/msg/send', {
+  const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/msg/send?_from_multi_acc=1', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -474,16 +476,163 @@ async function sendFreeGiftAll(roomId) {
 }
 
 /**
+ * 获取单个账号在直播间的资产 (电池、背包道具数量) 以及连接状态
+ */
+async function fetchAccountLiveAssets(account) {
+  let battery = 0;
+  let bagCount = 0;
+  let bagItems = [];
+  let status = 'online';
+
+  try {
+    // 1. 查询直播用户信息与电池 (底层接口 gold 字段为金瓜子，1 电池 = 100 金瓜子)
+    const userRes = await fetchWithAccount(
+      account,
+      'https://api.live.bilibili.com/xlive/web-ucenter/user/get_user_info',
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    if (userRes && userRes.code === 0 && userRes.data) {
+      // 换算为实际真实电池数 (例 3200 金瓜子 => 32 电池)
+      const rawGold = userRes.data.gold ?? 0;
+      battery = Math.floor(rawGold / 100);
+    } else if (userRes && userRes.code === -101) {
+      status = 'expired';
+    }
+
+    // 2. 查询背包礼物列表与明细
+    const bagRes = await fetchWithAccount(
+      account,
+      `https://api.live.bilibili.com/xlive/web-room/v1/gift/bag_list?t=${Date.now()}`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    if (bagRes && bagRes.code === 0 && bagRes.data && Array.isArray(bagRes.data.list)) {
+      for (const item of bagRes.data.list) {
+        bagCount += (item.gift_num || 1);
+        bagItems.push({
+          bag_id: item.bag_id,
+          gift_id: item.gift_id,
+          gift_name: item.gift_name,
+          gift_num: item.gift_num,
+          expire_at: item.expire_at,
+          corner_mark: item.corner_mark
+        });
+      }
+    }
+  } catch (err) {
+    status = 'offline';
+  }
+
+  return {
+    battery,
+    bagCount,
+    bagItems,
+    status
+  };
+}
+
+/**
+ * 批量获取所有已录入账号的直播间资产与连接状态
+ */
+async function getAccountsLiveStatus() {
+  const accounts = await Storage.getAccounts();
+  
+  // 获取当前主账号 mid
+  let currentMid = null;
+  try {
+    const cookie = await chrome.cookies.get({ url: 'https://www.bilibili.com', name: 'DedeUserID' });
+    if (cookie && cookie.value) {
+      currentMid = String(cookie.value);
+    }
+  } catch (e) {}
+
+  if (!currentMid) {
+    const currentAcc = accounts.find(a => a.isCurrent);
+    if (currentAcc) currentMid = String(currentAcc.mid);
+  }
+
+  const results = [];
+  for (const acc of accounts) {
+    const isCurrent = (String(acc.mid) === String(currentMid));
+    const assets = await fetchAccountLiveAssets(acc);
+    results.push({
+      mid: acc.mid,
+      uname: acc.uname,
+      face: acc.face,
+      enabled: acc.enabled,
+      isCurrent,
+      battery: assets.battery,
+      bagCount: assets.bagCount,
+      bagItems: assets.bagItems,
+      status: assets.status
+    });
+  }
+
+  return results;
+}
+
+/**
+ * 赠送指定账号背包中的单个道具
+ */
+async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
+  const accounts = await Storage.getAccounts();
+  const account = accounts.find(a => String(a.mid) === String(mid));
+  if (!account) {
+    return { success: false, message: '未找到指定账号' };
+  }
+
+  try {
+    const roomDetails = await BiliApi.getRoomDetails(roomId);
+    const realRoomId = roomDetails.roomId;
+    const anchorUid = roomDetails.anchorUid;
+
+    const body = new URLSearchParams({
+      uid: String(account.mid),
+      gift_id: String(giftId),
+      ruid: String(anchorUid),
+      send_ruid: '0',
+      gift_num: String(giftNum),
+      bag_id: String(bagId),
+      platform: 'pc',
+      biz_code: 'live',
+      biz_id: String(realRoomId),
+      rnd: String(Math.floor(Date.now() / 1000)),
+      storm_beat_id: '0',
+      metadata: '',
+      price: '0',
+      csrf: account.bili_jct || '',
+      csrf_token: account.bili_jct || ''
+    });
+
+    const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/xlive/revenue/v1/gift/sendBag?_from_multi_acc=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+
+    if (res && res.code === 0) {
+      return { success: true, message: '赠送成功' };
+    } else {
+      return { success: false, message: res?.message || `赠送失败(${res?.code})` };
+    }
+  } catch (err) {
+    return { success: false, message: `网络异常: ${err.message}` };
+  }
+}
+
+/**
  * 单账号视频点赞
  */
 async function sendSingleVideoLike(account, bvid, like = 1) {
   const body = new URLSearchParams({
     bvid,
     like: String(like),
-    csrf: account.bili_jct
+    csrf: account.bili_jct || '',
+    csrf_token: account.bili_jct || ''
   });
 
-  const res = await fetchWithAccount(account, 'https://api.bilibili.com/x/web-interface/archive/like', {
+  const res = await fetchWithAccount(account, 'https://api.bilibili.com/x/web-interface/archive/like?_from_multi_acc=1', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -555,7 +704,7 @@ async function sendSingleVideoTriple(account, bvid) {
     csrf: account.bili_jct
   });
 
-  const res = await fetchWithAccount(account, 'https://api.bilibili.com/x/web-interface/archive/like/triple', {
+  const res = await fetchWithAccount(account, 'https://api.bilibili.com/x/web-interface/archive/like/triple?_from_multi_acc=1', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -565,6 +714,308 @@ async function sendSingleVideoTriple(account, bvid) {
 
   return res;
 }
+
+/**
+ * 记录近期已触发跟随点赞/取消点赞的 key (bvid_action) 与时间戳，防止短时间内重复请求
+ */
+const recentFollowLikeMap = new Map();
+
+/**
+ * 记录近期已触发跟随弹幕的 key (roomId_message) 与时间戳，防止短时间内重复请求
+ */
+const recentFollowDanmakuMap = new Map();
+
+/**
+ * 当主账号在网页点赞或取消点赞时，调度其余副账号自动跟随
+ * @param {string} bvid 稿件 BV 号
+ * @param {number|null} tabId 来源标签页 ID
+ * @param {boolean} isTriple 是否为一键三连
+ * @param {number} likeAction 1 为点赞，2 为取消点赞
+ */
+async function handleAutoFollowLike(bvid, tabId = null, isTriple = false, likeAction = 1) {
+  if (!bvid) return;
+
+  const actionName = likeAction === 2 ? '取消点赞' : '点赞';
+  const debounceKey = `${bvid}_${likeAction}`;
+  const now = Date.now();
+  const lastTime = recentFollowLikeMap.get(debounceKey);
+  // 同一视频的相同动作 4 秒内只处理一次，避免连击抖动
+  if (lastTime && now - lastTime < 4000) {
+    return;
+  }
+  recentFollowLikeMap.set(debounceKey, now);
+
+  const settings = await Storage.getSettings();
+  if (settings.autoFollowLike === false) {
+    return;
+  }
+
+  const accounts = await Storage.getAccounts();
+  const enabledAccounts = accounts.filter(a => a.enabled);
+  if (enabledAccounts.length <= 1) {
+    // 只有一个或没有账号，无需跟随
+    return;
+  }
+
+  // 获取当前主账号的 mid
+  let currentMid = null;
+  try {
+    const cookie = await chrome.cookies.get({ url: 'https://www.bilibili.com', name: 'DedeUserID' });
+    if (cookie && cookie.value) {
+      currentMid = String(cookie.value);
+    }
+  } catch (e) {}
+
+  if (!currentMid) {
+    const currentAcc = accounts.find(a => a.isCurrent);
+    if (currentAcc) currentMid = String(currentAcc.mid);
+  }
+
+  // 严格过滤出“除当前主账号以外”的其余启用副账号
+  const subAccounts = enabledAccounts.filter(a => String(a.mid) !== String(currentMid));
+  if (subAccounts.length === 0) {
+    return;
+  }
+
+  console.log(`[自动跟随${actionName}] 检测到主账号对 ${bvid} 执行【${actionName}】，调度 ${subAccounts.length} 个副账号跟随...`);
+
+  let successCount = 0;
+  let failedCount = 0;
+  let lastFailReason = '';
+
+  for (let i = 0; i < subAccounts.length; i++) {
+    const acc = subAccounts[i];
+    
+    // 防风控离散随机延时
+    const min = settings.delayMin || 500;
+    const max = settings.delayMax || 1500;
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    await sleep(delay);
+
+    try {
+      const resp = await sendSingleVideoLike(acc, bvid, likeAction);
+      const isLike = (likeAction === 1);
+      // like=1: 0 成功, 65006 已点赞; like=2: 0 成功, 65004 取消点赞成功
+      const isSuccess = resp && (
+        resp.code === 0 ||
+        (isLike && resp.code === 65006) ||
+        (!isLike && resp.code === 65004)
+      );
+
+      if (isSuccess) {
+        successCount++;
+      } else {
+        failedCount++;
+        let reason = resp?.message || `错误码 ${resp?.code}`;
+        if (resp?.code === -101) reason = '凭据过期/未登录';
+        if (resp?.code === -111) reason = 'CSRF校验失败';
+        lastFailReason = `${acc.uname}: ${reason}`;
+        console.warn(`[自动跟随${actionName}] 副账号【${acc.uname}】响应异常:`, resp);
+      }
+    } catch (err) {
+      failedCount++;
+      lastFailReason = `${acc.uname}: ${err.message || '网络异常'}`;
+      console.warn(`[自动跟随${actionName}] 副账号【${acc.uname}】网络异常:`, err);
+    }
+  }
+
+  console.log(`[自动跟随${actionName}] 执行完毕: ${successCount}/${subAccounts.length} 个副账号完成`);
+
+  // 若开启了轻量通知且知道来源标签页，通知页面给出非侵入式的轻量浮动提示
+  if (settings.notifyFollowLike !== false && tabId && tabId >= 0) {
+    try {
+      chrome.tabs.sendMessage(tabId, {
+        action: 'NOTIFY_FOLLOW_LIKE_RESULT',
+        data: {
+          bvid,
+          likeAction,
+          actionName,
+          total: subAccounts.length,
+          successCount,
+          failedCount,
+          lastFailReason
+        }
+      });
+    } catch (err) {
+      // 页面若已刷新或关闭，忽略异常
+    }
+  }
+}
+
+/**
+ * 当主账号在直播间发送弹幕后，调度其余副账号自动跟随发送弹幕
+ * @param {string|number} roomId 直播间房间号
+ * @param {string} message 弹幕文本
+ * @param {number|null} tabId 来源标签页 ID
+ */
+async function handleAutoFollowDanmaku(roomId, message, tabId = null) {
+  const msg = String(message || '').trim();
+  if (!roomId || !msg) return;
+
+  const debounceKey = `${roomId}_${msg}`;
+  const now = Date.now();
+  const lastTime = recentFollowDanmakuMap.get(debounceKey);
+  // 3.5秒内相同房间且相同内容的发言只处理一次，避免连击抖动或网络重试导致多次发送
+  if (lastTime && now - lastTime < 3500) {
+    return;
+  }
+  recentFollowDanmakuMap.set(debounceKey, now);
+
+  const settings = await Storage.getSettings();
+  if (settings.autoFollowDanmaku === false) {
+    return;
+  }
+
+  const accounts = await Storage.getAccounts();
+  const enabledAccounts = accounts.filter(a => a.enabled);
+  if (enabledAccounts.length <= 1) {
+    // 只有一个或没有账号，无需跟随
+    return;
+  }
+
+  // 获取当前主账号的 mid
+  let currentMid = null;
+  try {
+    const cookie = await chrome.cookies.get({ url: 'https://www.bilibili.com', name: 'DedeUserID' });
+    if (cookie && cookie.value) {
+      currentMid = String(cookie.value);
+    }
+  } catch (e) {}
+
+  if (!currentMid) {
+    const currentAcc = accounts.find(a => a.isCurrent);
+    if (currentAcc) currentMid = String(currentAcc.mid);
+  }
+
+  // 严格过滤出“除当前主账号以外”的其余启用副账号
+  const subAccounts = enabledAccounts.filter(a => String(a.mid) !== String(currentMid));
+  if (subAccounts.length === 0) {
+    return;
+  }
+
+  console.log(`[自动跟随弹幕] 检测到主账号在房间 ${roomId} 发送: "${msg}"，调度 ${subAccounts.length} 个副账号跟随发言...`);
+
+  let successCount = 0;
+  let failedCount = 0;
+  let lastFailReason = '';
+
+  for (let i = 0; i < subAccounts.length; i++) {
+    const acc = subAccounts[i];
+
+    // 防风控离散随机延时
+    const min = settings.delayMin || 500;
+    const max = settings.delayMax || 1500;
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    await sleep(delay);
+
+    try {
+      const resp = await sendSingleDanmaku(acc, roomId, msg);
+      if (resp && resp.code === 0) {
+        successCount++;
+      } else {
+        failedCount++;
+        let reason = resp?.message || `错误码 ${resp?.code}`;
+        if (resp?.code === -101) reason = '凭据过期/未登录';
+        if (resp?.code === -111) reason = 'CSRF校验失败';
+        if (resp?.code === 10031) reason = '发言过于频繁';
+        lastFailReason = `${acc.uname}: ${reason}`;
+        console.warn(`[自动跟随弹幕] 副账号【${acc.uname}】发送响应异常:`, resp);
+      }
+    } catch (err) {
+      failedCount++;
+      lastFailReason = `${acc.uname}: ${err.message || '网络异常'}`;
+      console.warn(`[自动跟随弹幕] 副账号【${acc.uname}】网络异常:`, err);
+    }
+  }
+
+  console.log(`[自动跟随弹幕] 执行完毕: ${successCount}/${subAccounts.length} 个副账号完成`);
+
+  // 若开启了轻量通知且知道来源标签页，通知页面给出非侵入式的轻量浮动提示
+  if (settings.notifyFollowDanmaku !== false && tabId && tabId >= 0) {
+    try {
+      chrome.tabs.sendMessage(tabId, {
+        action: 'NOTIFY_FOLLOW_DANMAKU_RESULT',
+        data: {
+          roomId,
+          message: msg,
+          total: subAccounts.length,
+          successCount,
+          failedCount,
+          lastFailReason
+        }
+      });
+    } catch (err) {
+      // 页面若已刷新或关闭，忽略异常
+    }
+  }
+}
+
+/**
+ * 监听 B 站网页原生点赞/取消点赞与直播弹幕网络请求 (通过 webRequest)
+ */
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    try {
+      // 仅处理来自普通页面 (tabId >= 0) 的 POST 请求，忽略插件内部发出的请求
+      if (details.method !== 'POST') return;
+      if (details.tabId < 0) return;
+      if (details.url.includes('_from_multi_acc=1')) return;
+
+      let formData = null;
+      if (details.requestBody) {
+        if (details.requestBody.formData) {
+          formData = details.requestBody.formData;
+        } else if (details.requestBody.raw && details.requestBody.raw.length > 0) {
+          const decoder = new TextDecoder('utf-8');
+          const rawBytes = details.requestBody.raw[0].bytes;
+          if (rawBytes) {
+            const str = decoder.decode(rawBytes);
+            const params = new URLSearchParams(str);
+            formData = {};
+            for (const [k, v] of params.entries()) {
+              formData[k] = [v];
+            }
+          }
+        }
+      }
+
+      // 1. 直播间弹幕发送捕获
+      const isDanmakuUrl = details.url.includes('api.live.bilibili.com/msg/send') ||
+        details.url.includes('api.live.bilibili.com/xlive/web-room/v1/dM/send');
+
+      if (isDanmakuUrl && formData) {
+        const roomId = (formData.roomid && formData.roomid[0]) || (formData.room_id && formData.room_id[0]);
+        const msg = formData.msg && formData.msg[0];
+        if (roomId && msg) {
+          handleAutoFollowDanmaku(roomId, msg, details.tabId);
+          return;
+        }
+      }
+
+      // 2. 视频点赞与取消点赞捕获
+      let bvid = formData && formData.bvid && formData.bvid[0];
+      let like = formData && formData.like && formData.like[0];
+
+      const isTriple = details.url.includes('/archive/like/triple');
+      // like: 1 为点赞，2 为取消点赞；triple 为一键三连点赞
+      if ((like === '1' || like === '2' || isTriple) && bvid) {
+        const likeAction = isTriple ? 1 : Number(like || 1);
+        handleAutoFollowLike(bvid, details.tabId, isTriple, likeAction);
+      }
+    } catch (err) {
+      console.warn('webRequest 解析网络数据失败:', err);
+    }
+  },
+  {
+    urls: [
+      '*://api.bilibili.com/x/web-interface/archive/like*',
+      '*://api.bilibili.com/x/web-interface/archive/like/triple*',
+      '*://api.live.bilibili.com/msg/send*',
+      '*://api.live.bilibili.com/xlive/web-room/v1/dM/send*'
+    ]
+  },
+  ['requestBody']
+);
 
 /**
  * 全账号同时视频一键三连 (带防风控离散延时)
@@ -706,6 +1157,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
 
       // 直播间弹幕与送礼
+      case 'GET_ACCOUNTS_LIVE_STATUS': {
+        const results = await getAccountsLiveStatus();
+        return { success: true, accounts: results };
+      }
+
+      case 'SEND_SINGLE_BAG_GIFT': {
+        const res = await sendSingleBagGift(request);
+        return res;
+      }
+
+      case 'TRIGGER_AUTO_FOLLOW_DANMAKU': {
+        const tabId = sender.tab ? sender.tab.id : null;
+        await handleAutoFollowDanmaku(request.roomId, request.message, tabId);
+        return { success: true };
+      }
+
       case 'GET_REAL_ROOM_ID': {
         const realRoomId = await BiliApi.getRealRoomId(request.roomId);
         return { success: true, realRoomId };
@@ -722,6 +1189,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
 
       // 视频点赞与一键三连
+      case 'TRIGGER_AUTO_FOLLOW_LIKE': {
+        const tabId = sender.tab ? sender.tab.id : null;
+        await handleAutoFollowLike(request.bvid, tabId, request.isTriple || false, request.likeAction ?? 1);
+        return { success: true };
+      }
+
       case 'SEND_VIDEO_LIKE_ALL': {
         const res = await sendVideoLikeAll(request.bvid, request.like ?? 1);
         return res;

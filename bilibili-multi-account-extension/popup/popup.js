@@ -42,6 +42,10 @@ const elements = {
   resultsList: document.getElementById('results-list'),
 
   // 设置模块
+  settingAutoFollowLike: document.getElementById('setting-auto-follow-like'),
+  settingNotifyFollowLike: document.getElementById('setting-notify-follow-like'),
+  settingAutoFollowDanmaku: document.getElementById('setting-auto-follow-danmaku'),
+  settingNotifyFollowDanmaku: document.getElementById('setting-notify-follow-danmaku'),
   settingAutoRefresh: document.getElementById('setting-auto-refresh'),
   settingDelayMin: document.getElementById('setting-delay-min'),
   settingDelayMax: document.getElementById('setting-delay-max'),
@@ -514,17 +518,37 @@ function renderResults(results) {
 
 async function loadSettings() {
   const settings = await Storage.getSettings();
+  if (elements.settingAutoFollowLike) {
+    elements.settingAutoFollowLike.checked = settings.autoFollowLike !== false;
+  }
+  if (elements.settingNotifyFollowLike) {
+    elements.settingNotifyFollowLike.checked = settings.notifyFollowLike !== false;
+  }
+  if (elements.settingAutoFollowDanmaku) {
+    elements.settingAutoFollowDanmaku.checked = settings.autoFollowDanmaku !== false;
+  }
+  if (elements.settingNotifyFollowDanmaku) {
+    elements.settingNotifyFollowDanmaku.checked = settings.notifyFollowDanmaku !== false;
+  }
   elements.settingAutoRefresh.checked = settings.autoRefreshTab;
   elements.settingDelayMin.value = settings.delayMin;
   elements.settingDelayMax.value = settings.delayMax;
 }
 
 async function handleSaveSettings() {
+  const autoFollowLike = elements.settingAutoFollowLike ? elements.settingAutoFollowLike.checked : true;
+  const notifyFollowLike = elements.settingNotifyFollowLike ? elements.settingNotifyFollowLike.checked : true;
+  const autoFollowDanmaku = elements.settingAutoFollowDanmaku ? elements.settingAutoFollowDanmaku.checked : true;
+  const notifyFollowDanmaku = elements.settingNotifyFollowDanmaku ? elements.settingNotifyFollowDanmaku.checked : true;
   const autoRefresh = elements.settingAutoRefresh.checked;
   const delayMin = Math.max(100, parseInt(elements.settingDelayMin.value || '500', 10));
   const delayMax = Math.max(delayMin, parseInt(elements.settingDelayMax.value || '1500', 10));
 
   await Storage.saveSettings({
+    autoFollowLike,
+    notifyFollowLike,
+    autoFollowDanmaku,
+    notifyFollowDanmaku,
     autoRefreshTab: autoRefresh,
     delayMin,
     delayMax

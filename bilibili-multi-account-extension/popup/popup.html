@@ -118,6 +118,50 @@
       <section id="tab-settings" class="tab-pane">
         <div class="setting-item">
           <div class="setting-info">
+            <div class="setting-title">主账号点赞时副账号自动跟随</div>
+            <div class="setting-desc">主账号在网页点赞视频时，其余已启用的副账号在后台静默跟随点赞</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="setting-auto-follow-like" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">跟随点赞轻量气泡提醒</div>
+            <div class="setting-desc">副账号跟随点赞完成后，在页面右下角显示极简浮动胶囊提示</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="setting-notify-follow-like" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">直播间发言副账号自动跟随</div>
+            <div class="setting-desc">主账号在直播间发送弹幕后，其余已启用的副账号在后台静默跟随发言</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="setting-auto-follow-danmaku" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">跟随发言轻量气泡提醒</div>
+            <div class="setting-desc">副账号跟随发送弹幕完成后，在页面右下角显示极简浮动胶囊提示</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="setting-notify-follow-danmaku" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
             <div class="setting-title">切换主账号后自动刷新</div>
             <div class="setting-desc">将账号设为主号时自动刷新当前 B 站标签页</div>
           </div>
@@ -129,8 +173,8 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <div class="setting-title">群控发言随机延迟 (ms)</div>
-            <div class="setting-desc">多账号依次发送时的防风控间隔范围</div>
+            <div class="setting-title">多账号离散随机延迟 (ms)</div>
+            <div class="setting-desc">副号跟随点赞及群控发言时的防风控间隔范围</div>
           </div>
           <div class="range-inputs">
             <input type="number" id="setting-delay-min" min="200" max="5000" step="100" value="500">

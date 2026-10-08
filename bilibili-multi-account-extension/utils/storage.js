@@ -89,7 +89,11 @@ export const Storage = {
     const defaults = {
       delayMin: 500,
       delayMax: 1500,
-      autoRefreshTab: true
+      autoRefreshTab: true,
+      autoFollowLike: true,
+      notifyFollowLike: true,
+      autoFollowDanmaku: true,
+      notifyFollowDanmaku: true
     };
     const res = await chrome.storage.local.get({ settings: defaults });
     return { ...defaults, ...res.settings };
