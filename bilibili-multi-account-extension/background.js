@@ -322,8 +322,8 @@ async function sendDanmakuAll(roomId, message) {
     const account = accounts[i];
     
     if (i > 0) {
-      const min = settings.delayMin || 500;
-      const max = settings.delayMax || 1500;
+      const min = settings.delayMin ?? 100;
+      const max = settings.delayMax ?? 400;
       const randomDelay = Math.floor(Math.random() * (max - min + 1)) + min;
       await sleep(randomDelay);
     }
@@ -447,8 +447,8 @@ async function sendFreeGiftAll(roomId) {
   for (let i = 0; i < accounts.length; i++) {
     const account = accounts[i];
     if (i > 0) {
-      const min = settings.delayMin || 500;
-      const max = settings.delayMax || 1500;
+      const min = settings.delayMin ?? 100;
+      const max = settings.delayMax ?? 400;
       const delay = Math.floor(Math.random() * (max - min + 1)) + min;
       await sleep(delay);
     }
@@ -658,8 +658,8 @@ async function sendVideoLikeAll(bvid, like = 1) {
   for (let i = 0; i < accounts.length; i++) {
     const account = accounts[i];
     if (i > 0) {
-      const min = settings.delayMin || 500;
-      const max = settings.delayMax || 1500;
+      const min = settings.delayMin ?? 100;
+      const max = settings.delayMax ?? 400;
       const delay = Math.floor(Math.random() * (max - min + 1)) + min;
       await sleep(delay);
     }
@@ -786,9 +786,9 @@ async function handleAutoFollowLike(bvid, tabId = null, isTriple = false, likeAc
   for (let i = 0; i < subAccounts.length; i++) {
     const acc = subAccounts[i];
     
-    // 防风控离散随机延时
-    const min = settings.delayMin || 500;
-    const max = settings.delayMax || 1500;
+    // 防风控离散随机延时 (100ms - 400ms)
+    const min = settings.delayMin ?? 100;
+    const max = settings.delayMax ?? 400;
     const delay = Math.floor(Math.random() * (max - min + 1)) + min;
     await sleep(delay);
 
@@ -902,9 +902,9 @@ async function handleAutoFollowDanmaku(roomId, message, tabId = null) {
   for (let i = 0; i < subAccounts.length; i++) {
     const acc = subAccounts[i];
 
-    // 防风控离散随机延时
-    const min = settings.delayMin || 500;
-    const max = settings.delayMax || 1500;
+    // 防风控离散随机延时 (100ms - 400ms)
+    const min = settings.delayMin ?? 100;
+    const max = settings.delayMax ?? 400;
     const delay = Math.floor(Math.random() * (max - min + 1)) + min;
     await sleep(delay);
 
@@ -1032,8 +1032,8 @@ async function sendVideoTripleAll(bvid) {
   for (let i = 0; i < accounts.length; i++) {
     const account = accounts[i];
     if (i > 0) {
-      const min = settings.delayMin || 500;
-      const max = settings.delayMax || 1500;
+      const min = settings.delayMin ?? 100;
+      const max = settings.delayMax ?? 400;
       const delay = Math.floor(Math.random() * (max - min + 1)) + min;
       await sleep(delay);
     }

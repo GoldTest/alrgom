@@ -87,8 +87,8 @@ export const Storage = {
    */
   async getSettings() {
     const defaults = {
-      delayMin: 500,
-      delayMax: 1500,
+      delayMin: 100,
+      delayMax: 400,
       autoRefreshTab: true,
       autoFollowLike: true,
       notifyFollowLike: true,

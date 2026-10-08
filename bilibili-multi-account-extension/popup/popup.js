@@ -541,8 +541,8 @@ async function handleSaveSettings() {
   const autoFollowDanmaku = elements.settingAutoFollowDanmaku ? elements.settingAutoFollowDanmaku.checked : true;
   const notifyFollowDanmaku = elements.settingNotifyFollowDanmaku ? elements.settingNotifyFollowDanmaku.checked : true;
   const autoRefresh = elements.settingAutoRefresh.checked;
-  const delayMin = Math.max(100, parseInt(elements.settingDelayMin.value || '500', 10));
-  const delayMax = Math.max(delayMin, parseInt(elements.settingDelayMax.value || '1500', 10));
+  const delayMin = Math.max(50, parseInt(elements.settingDelayMin.value || '100', 10));
+  const delayMax = Math.max(delayMin, parseInt(elements.settingDelayMax.value || '400', 10));
 
   await Storage.saveSettings({
     autoFollowLike,
