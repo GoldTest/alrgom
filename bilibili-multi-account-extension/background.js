@@ -481,19 +481,19 @@ async function sendFreeGiftAll(roomId) {
 async function fetchRoomGiftList(account, realRoomId) {
   const res = await fetchWithAccount(
     account,
-    `https://api.live.bilibili.com/xlive/web-room/v1/gift/room_gift_list?room_id=${realRoomId}&area_id=&area_parent_id=&page=1&platform=pc`,
+    `https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/giftConfig?platform=pc&room_id=${realRoomId}&area_id=&area_parent_id=&version=0&build=1`,
     { headers: { 'Accept': 'application/json' } }
   );
 
   if (res && res.code === 0 && res.data && Array.isArray(res.data.list)) {
     return res.data.list
-      .filter(g => g.type === 2) // type=2 金瓜子礼物（付费）
+      .filter(g => g.coin_type === 'gold' && g.price > 0) // 金瓜子付费礼物，排除 price=0 的活动免费礼物
       .map(g => ({
         id: g.id,
         name: g.name,
-        price: g.price,                        // 金瓜子
-        battery: Math.ceil(g.price / 100),     // 电池 (1电池=100金瓜子)
-        img: g.img_basic || g.img || ''
+        price: g.price,                       // 金瓜子
+        battery: Math.ceil(g.price / 100),    // 电池 (1电池=100金瓜子)
+        img: g.img_basic || ''
       }))
       .sort((a, b) => a.price - b.price);
   }
