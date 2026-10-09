@@ -623,6 +623,88 @@
       from { opacity: 0; transform: translate(-50%, -6px); }
       to { opacity: 1; transform: translate(-50%, 0); }
     }
+
+    /* 跟随发言开关 */
+    .follow-danmaku-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 9px;
+      background: #f4f8ff;
+      border: 1px solid #d6e8ff;
+      border-radius: 7px;
+      margin-bottom: 4px;
+    }
+
+    .toggle-label {
+      font-size: 11px;
+      color: #445566;
+      flex: 1;
+      user-select: none;
+    }
+
+    .toggle-label-hint {
+      font-size: 9px;
+      color: #9499a0;
+      margin-top: 1px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 34px;
+      height: 18px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #d0d4da;
+      border-radius: 18px;
+      transition: background 0.2s;
+      cursor: pointer;
+    }
+
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .toggle-switch input:checked + .toggle-track {
+      background: #fb7299;
+    }
+
+    .toggle-switch input:checked + .toggle-track::after {
+      transform: translateX(16px);
+    }
+
+    .toggle-status-text {
+      font-size: 10px;
+      font-weight: 600;
+      color: #9499a0;
+      min-width: 24px;
+      text-align: right;
+    }
+
+    .toggle-status-text.is-on {
+      color: #fb7299;
+    }
   `;
 
   shadow.innerHTML = `
@@ -668,6 +750,20 @@
             <span>各账号连接与资产状态</span>
             <span id="btn-refresh-live-assets" style="font-size: 10px; color: #9499a0; cursor: pointer;" title="点击重新查询各账号电池与背包">🔄 刷新</span>
           </div>
+
+          <!-- 跟随发言开关 (只控制是否跟随发言，不影响副账号在线状态) -->
+          <div class="follow-danmaku-toggle-row">
+            <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+              <span class="toggle-label">💬 副账号跟随发言</span>
+              <span class="toggle-label-hint">关闭后副账号仍维持在线，仅停止跟发弹幕</span>
+            </div>
+            <span id="follow-danmaku-status-text" class="toggle-status-text">开</span>
+            <label class="toggle-switch" title="开启/关闭副账号跟随发言">
+              <input type="checkbox" id="follow-danmaku-toggle" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
           <div id="live-accounts-list" class="live-accounts-list">
             <div style="color: #9499a0; font-size: 11px; padding: 8px 0; text-align: center;">正在读取各账号资产...</div>
           </div>
@@ -957,6 +1053,49 @@
     });
   }
 
+  // ── 跟随发言开关 ──────────────────────────────────────────────
+  const followDanmakuToggle = shadow.getElementById('follow-danmaku-toggle');
+  const followDanmakuStatusText = shadow.getElementById('follow-danmaku-status-text');
+
+  /** 同步开关 UI 状态（不触发 storage 写入） */
+  function syncFollowDanmakuUI(enabled) {
+    if (!followDanmakuToggle) return;
+    followDanmakuToggle.checked = !!enabled;
+    if (followDanmakuStatusText) {
+      followDanmakuStatusText.textContent = enabled ? '开' : '关';
+      followDanmakuStatusText.classList.toggle('is-on', !!enabled);
+    }
+  }
+
+  /** 从 storage 读取当前设置并同步开关初始状态 */
+  async function initFollowDanmakuToggle() {
+    if (!isExtensionValid() || !followDanmakuToggle) return;
+    try {
+      const res = await chrome.runtime.sendMessage({ action: 'GET_SETTINGS' });
+      const enabled = res?.settings?.autoFollowDanmaku !== false;
+      syncFollowDanmakuUI(enabled);
+    } catch (_) {}
+  }
+
+  if (followDanmakuToggle) {
+    followDanmakuToggle.addEventListener('change', async () => {
+      if (!isExtensionValid()) return;
+      const enabled = followDanmakuToggle.checked;
+      syncFollowDanmakuUI(enabled);
+      try {
+        await chrome.runtime.sendMessage({
+          action: 'UPDATE_SETTING',
+          key: 'autoFollowDanmaku',
+          value: enabled
+        });
+        showToast(enabled ? '💬 跟随发言已开启' : '💬 跟随发言已关闭（副账号仍在线）');
+      } catch (err) {
+        showToast(`设置保存失败: ${err.message}`);
+      }
+    });
+  }
+  // ─────────────────────────────────────────────────────────────
+
   async function refreshData() {
     if (!isExtensionValid()) return;
     try {
@@ -971,6 +1110,7 @@
       if (pageCtx.isLive) {
         if (normalAccountsBox) normalAccountsBox.style.display = 'none';
         if (liveAccountsSection) liveAccountsSection.style.display = 'flex';
+        initFollowDanmakuToggle();
         renderLiveAccountsAssets();
       } else {
         if (normalAccountsBox) normalAccountsBox.style.display = 'block';

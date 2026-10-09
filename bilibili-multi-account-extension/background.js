@@ -1221,6 +1221,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return { success: true, inLive: false };
       }
 
+      case 'GET_SETTINGS': {
+        const settings = await Storage.getSettings();
+        return { success: true, settings };
+      }
+
+      case 'UPDATE_SETTING': {
+        const currentSettings = await Storage.getSettings();
+        currentSettings[request.key] = request.value;
+        await Storage.saveSettings(currentSettings);
+        return { success: true };
+      }
+
       default:
         return { success: false, error: '未知操作指令' };
     }
