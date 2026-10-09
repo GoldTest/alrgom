@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c6fef"/>
+      <stop offset="100%" stop-color="#43c6d5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.3)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="48" height="48" rx="12" fill="url(#g)"/>
+  <rect width="48" height="48" rx="12" fill="url(#glow)"/>
+  <!-- 星光图案 -->
+  <circle cx="24" cy="20" r="8" fill="none" stroke="white" stroke-width="2.5" opacity="0.9"/>
+  <path d="M24 10 L26 16 L24 14 L22 16 Z" fill="white" opacity="0.7"/>
+  <circle cx="24" cy="20" r="2.5" fill="white"/>
+  <!-- 光芒 -->
+  <line x1="24" y1="6" x2="24" y2="10" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="24" y1="30" x2="24" y2="34" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="10" y1="20" x2="14" y2="20" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="34" y1="20" x2="38" y2="20" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <!-- 底部文字装饰 -->
+  <rect x="14" y="37" width="20" height="3" rx="1.5" fill="white" opacity="0.5"/>
+</svg>

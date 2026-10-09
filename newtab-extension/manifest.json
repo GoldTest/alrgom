@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Lumina New Tab",
+  "version": "1.0.0",
+  "description": "一个沉浸式、精美的新标签页体验 — 星空背景、玻璃拟态卡片、快捷方式网格。",
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg"
+    },
+    "default_title": "Lumina New Tab"
+  }
+}

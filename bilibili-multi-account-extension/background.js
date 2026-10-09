@@ -23,7 +23,7 @@ const requestLock = new AsyncLock();
 /**
  * 设置当前请求的 Session Cookie (通过 declarativeNetRequest)
  */
-async function setTargetCookieRule(account) {
+async function setTargetCookieRule(account, targetUrl = '') {
   const cookieParts = [
     `SESSDATA=${account.sessdata}`,
     `bili_jct=${account.bili_jct}`,
@@ -31,6 +31,10 @@ async function setTargetCookieRule(account) {
     `DedeUserID__ckMd5=${account.dedeUserId_ckMd5 || ''}`
   ];
   const cookieStr = cookieParts.join('; ');
+
+  const isLive = typeof targetUrl === 'string' && targetUrl.includes('live.bilibili.com');
+  const origin = isLive ? 'https://live.bilibili.com' : 'https://www.bilibili.com';
+  const referer = isLive ? 'https://live.bilibili.com/' : 'https://www.bilibili.com';
 
   await chrome.declarativeNetRequest.updateSessionRules({
     removeRuleIds: [DNR_RULE_ID],
@@ -41,8 +45,8 @@ async function setTargetCookieRule(account) {
         type: 'modifyHeaders',
         requestHeaders: [
           { header: 'Cookie', operation: 'set', value: cookieStr },
-          { header: 'Origin', operation: 'set', value: 'https://www.bilibili.com' },
-          { header: 'Referer', operation: 'set', value: 'https://www.bilibili.com' },
+          { header: 'Origin', operation: 'set', value: origin },
+          { header: 'Referer', operation: 'set', value: referer },
           { header: 'User-Agent', operation: 'set', value: navigator.userAgent }
         ]
       },
@@ -73,9 +77,27 @@ async function clearTargetCookieRule() {
 async function fetchWithAccount(account, url, options = {}) {
   return requestLock.run(async () => {
     try {
-      await setTargetCookieRule(account);
+      await setTargetCookieRule(account, url);
       const res = await fetch(url, options);
-      return await res.json();
+      const rawText = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        // 尝试提取花括号内的合法 JSON（防御前缀或尾随内容）
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            data = JSON.parse(rawText.substring(firstBrace, lastBrace + 1));
+          } catch (_) {}
+        }
+        if (!data) {
+          const preview = rawText.trim().slice(0, 60);
+          throw new Error(`接口响应非标准JSON(HTTP ${res.status}): ${preview || '空内容'}`);
+        }
+      }
+      return data;
     } finally {
       await clearTargetCookieRule();
     }
@@ -476,7 +498,7 @@ async function sendFreeGiftAll(roomId) {
 }
 
 /**
- * 获取直播间全部可送礼物列表（金瓜子礼物，按价格升序）
+ * 获取直播间全部礼物列表（包含电池礼物、包裹专属礼物、不支持/限定礼物分类）
  */
 async function fetchRoomGiftList(account, realRoomId) {
   const res = await fetchWithAccount(
@@ -486,16 +508,54 @@ async function fetchRoomGiftList(account, realRoomId) {
   );
 
   if (res && res.code === 0 && res.data && Array.isArray(res.data.list)) {
-    return res.data.list
-      .filter(g => g.coin_type === 'gold' && g.price > 0) // 金瓜子付费礼物，排除 price=0 的活动免费礼物
-      .map(g => ({
+    const list = res.data.list.map(g => {
+      // 1. 判断是否当前房间不支持 / 专属限定
+      const isBoundOtherRoom = (g.bind_roomid > 0 && String(g.bind_roomid) !== String(realRoomId));
+      const isPrivilegeRequired = (g.privilege_required > 0);
+      const isUnsupported = isBoundOtherRoom || isPrivilegeRequired;
+      let unsupportedReason = '';
+      if (isBoundOtherRoom) {
+        unsupportedReason = `房间限定(${g.bind_roomid})`;
+      } else if (isPrivilegeRequired) {
+        unsupportedReason = '需特权身份';
+      }
+
+      // 2. 判断是否只能从包裹/背包送出 (免费活动道具/银瓜子道具/价格为0的包裹道具)
+      const isBagOnly = !isUnsupported && (g.price === 0 || g.coin_type === 'silver');
+
+      // 3. 正常电池金瓜子礼物
+      const isBattery = !isUnsupported && !isBagOnly && (g.coin_type === 'gold' && g.price > 0);
+
+      let category = 'battery';
+      if (isUnsupported) {
+        category = 'unsupported';
+      } else if (isBagOnly) {
+        category = 'bag';
+      }
+
+      return {
         id: g.id,
         name: g.name,
-        price: g.price,                       // 金瓜子
-        battery: Math.ceil(g.price / 100),    // 电池 (1电池=100金瓜子)
-        img: g.img_basic || ''
-      }))
-      .sort((a, b) => a.price - b.price);
+        price: g.price || 0,
+        coinType: g.coin_type || 'gold',
+        battery: Math.ceil((g.price || 0) / 100),
+        img: g.img_basic || '',
+        category, // 'battery' | 'bag' | 'unsupported'
+        isUnsupported,
+        unsupportedReason,
+        isBagOnly,
+        isBattery,
+        cornerMark: g.corner_mark || ''
+      };
+    });
+
+    // 默认排序：电池礼物按价格升序，包裹专属按 id 排序
+    return list.sort((a, b) => {
+      if (a.category === 'battery' && b.category === 'battery') {
+        return a.price - b.price;
+      }
+      return 0;
+    });
   }
   return [];
 }
@@ -503,8 +563,9 @@ async function fetchRoomGiftList(account, realRoomId) {
 /**
  * 单账号送出直播间金瓜子礼物（扣电池）
  */
-async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftNum = 1) {
-  const body = new URLSearchParams({
+async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftPrice = 0, giftNum = 1) {
+  const rnd = Math.floor(Date.now() / 1000);
+  const commonParams = {
     uid: String(account.mid),
     gift_id: String(giftId),
     ruid: String(anchorUid),
@@ -513,26 +574,37 @@ async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftNum = 
     coin_type: 'gold',
     bag_id: '0',
     platform: 'pc',
-    biz_code: 'live',
+    biz_code: 'Live',
     biz_id: String(roomId),
-    rnd: String(Math.floor(Date.now() / 1000)),
+    rnd: String(rnd),
     storm_beat_id: '0',
     metadata: '',
-    price: '0',
+    price: String(giftPrice || '0'),
     csrf: account.bili_jct || '',
-    csrf_token: account.bili_jct || ''
-  });
+    csrf_token: account.bili_jct || '',
+    visit_id: ''
+  };
 
-  const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/xlive/revenue/v1/gift/sendWeb?_from_multi_acc=1', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString()
-  });
+  const body = new URLSearchParams(commonParams);
 
-  if (res && res.code === 0) {
-    return { success: true, message: '送礼成功' };
+  try {
+    // 官方有效送礼接口
+    const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/gift/v2/gift/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+
+    if (res && res.code === 0) {
+      return { success: true, message: '送礼成功' };
+    }
+
+    const errCode = res?.code !== undefined ? res.code : -1;
+    const errMsg = res?.message || res?.msg || '送礼失败';
+    return { success: false, message: `${errMsg} (代码: ${errCode})` };
+  } catch (err) {
+    return { success: false, message: `网络异常: ${err.message}` };
   }
-  return { success: false, message: res?.message || `送礼失败(${res?.code})` };
 }
 
 /**
@@ -625,7 +697,7 @@ async function getAccountsLiveStatus() {
       battery: assets.battery,
       bagCount: assets.bagCount,
       bagItems: assets.bagItems,
-      status: assets.status
+      status: (!acc.enabled) ? 'offline' : assets.status
     });
   }
 
@@ -646,8 +718,9 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
     const roomDetails = await BiliApi.getRoomDetails(roomId);
     const realRoomId = roomDetails.roomId;
     const anchorUid = roomDetails.anchorUid;
+    const rnd = Math.floor(Date.now() / 1000);
 
-    const body = new URLSearchParams({
+    const commonParams = {
       uid: String(account.mid),
       gift_id: String(giftId),
       ruid: String(anchorUid),
@@ -655,17 +728,21 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
       gift_num: String(giftNum),
       bag_id: String(bagId),
       platform: 'pc',
-      biz_code: 'live',
+      biz_code: 'Live',
       biz_id: String(realRoomId),
-      rnd: String(Math.floor(Date.now() / 1000)),
+      rnd: String(rnd),
       storm_beat_id: '0',
       metadata: '',
       price: '0',
       csrf: account.bili_jct || '',
-      csrf_token: account.bili_jct || ''
-    });
+      csrf_token: account.bili_jct || '',
+      visit_id: ''
+    };
 
-    const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/xlive/revenue/v1/gift/sendBag?_from_multi_acc=1', {
+    const body = new URLSearchParams(commonParams);
+
+    // 1. 首选尝试现代背包送礼接口
+    const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/xlive/revenue/v1/gift/sendBag', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString()
@@ -673,9 +750,22 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
 
     if (res && res.code === 0) {
       return { success: true, message: '赠送成功' };
-    } else {
-      return { success: false, message: res?.message || `赠送失败(${res?.code})` };
     }
+
+    // 2. 若失败，fallback 尝试经典背包送礼接口
+    const resFallback = await fetchWithAccount(account, 'https://api.live.bilibili.com/gift/v2/live/bag_send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+
+    if (resFallback && resFallback.code === 0) {
+      return { success: true, message: '赠送成功' };
+    }
+
+    const errCode = res?.code !== undefined ? res.code : resFallback?.code;
+    const errMsg = res?.message || resFallback?.message || '赠送失败';
+    return { success: false, message: `${errMsg} (${errCode})` };
   } catch (err) {
     return { success: false, message: `网络异常: ${err.message}` };
   }
@@ -1248,6 +1338,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           roomDetails.roomId,
           roomDetails.anchorUid,
           request.giftId,
+          request.price ?? 0,
           request.giftNum ?? 1
         );
         return res;

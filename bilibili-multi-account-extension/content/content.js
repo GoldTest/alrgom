@@ -367,7 +367,37 @@
       height: 100%;
       border-radius: 50%;
       object-fit: cover;
-      border: 1px solid #e3e5e7;
+      border: 2px solid #e3e5e7;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    /* 主号粉色固定包边 */
+    .live-avatar.border-main {
+      border: 2px solid #fb7299;
+      box-shadow: 0 0 0 1px rgba(251, 114, 153, 0.3);
+    }
+
+    /* 在线绿色呼吸包边 (微幅细腻呼吸) */
+    @keyframes avatar-green-breath {
+      0%, 100% {
+        border-color: #2ac864;
+        box-shadow: 0 0 0 0.5px rgba(42, 200, 100, 0.3);
+      }
+      50% {
+        border-color: #2ac864;
+        box-shadow: 0 0 0 1.5px rgba(42, 200, 100, 0.65);
+      }
+    }
+
+    .live-avatar.border-online {
+      border: 2px solid #2ac864;
+      animation: avatar-green-breath 2.4s infinite ease-in-out;
+    }
+
+    /* 不在线灰色固定包边 */
+    .live-avatar.border-offline {
+      border: 2px solid #9499a0;
+      box-shadow: 0 0 0 1px rgba(148, 153, 160, 0.2);
     }
 
     .live-info-col {
@@ -385,38 +415,13 @@
     }
 
     .live-name {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       color: #18191c;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 80px;
-    }
-
-    .live-status-pill {
-      font-size: 9px;
-      padding: 1px 4px;
-      border-radius: 4px;
-      font-weight: 500;
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-    }
-
-    .status-pill-online {
-      background: #eaf8ee;
-      color: #2ac864;
-    }
-
-    .status-pill-current {
-      background: #fff0f4;
-      color: #fb7299;
-    }
-
-    .status-pill-expired {
-      background: #fff1f0;
-      color: #ff4d4f;
+      max-width: 110px;
     }
 
     .live-assets-row {
@@ -589,22 +594,99 @@
     .gift-drawer {
       display: none;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
       background: #fffbf0;
       border-radius: 6px;
-      padding: 5px 7px;
+      padding: 6px 7px;
       margin-top: 2px;
       border: 1px solid #ffe7ba;
       animation: drawerFade 0.15s ease;
-      max-height: 160px;
+      max-height: 220px;
+    }
+
+    /* 礼物分类 Tab 栏 */
+    .gift-drawer-tabs {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 4px;
+      padding-bottom: 4px;
+      margin-bottom: 3px;
+      border-bottom: 1px dashed #ffe7ba;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .gift-drawer-tabs.is-dragging {
+      cursor: grabbing;
+      scroll-behavior: auto;
+    }
+
+    .gift-drawer-tabs::-webkit-scrollbar {
+      height: 3px;
+    }
+
+    .gift-drawer-tabs::-webkit-scrollbar-track {
+      background: rgba(255, 231, 186, 0.4);
+      border-radius: 2px;
+    }
+
+    .gift-drawer-tabs::-webkit-scrollbar-thumb {
+      background: #ffd591;
+      border-radius: 2px;
+    }
+
+    .gift-drawer-tabs::-webkit-scrollbar-thumb:hover {
+      background: #fa8c16;
+    }
+
+    .gift-tab-btn {
+      background: #fdf5e6;
+      border: 1px solid #ffd591;
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 10px;
+      color: #873800;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .gift-tab-btn:hover {
+      background: #ffe7ba;
+    }
+
+    .gift-tab-btn.active {
+      background: #fa8c16;
+      color: #fff;
+      border-color: #d46b08;
+      font-weight: 600;
+    }
+
+    /* 礼物列表滚动容器 */
+    .gift-list-scroll {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 155px;
       overflow-y: auto;
+      padding-right: 2px;
     }
 
     .gift-item-row {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 4px 3px;
+      padding: 4px 5px;
       border-radius: 4px;
       cursor: pointer;
       transition: background 0.12s;
@@ -625,6 +707,19 @@
       pointer-events: none;
     }
 
+    .gift-item-row.is-unsupported {
+      opacity: 0.5;
+      background: #fafafa;
+    }
+
+    .gift-item-row.is-unsupported:hover {
+      background: #f0f0f0;
+    }
+
+    .gift-item-row.is-bag-empty {
+      opacity: 0.65;
+    }
+
     .gift-item-img {
       width: 20px;
       height: 20px;
@@ -642,12 +737,40 @@
       text-overflow: ellipsis;
     }
 
-    .gift-item-price {
-      font-size: 10px;
+    .gift-item-badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 4px;
       font-weight: 600;
-      color: #fa8c16;
       white-space: nowrap;
       flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .badge-battery {
+      background: #fff2e8;
+      color: #d4380d;
+      border: 1px solid #ffbb96;
+    }
+
+    .badge-bag-has {
+      background: #f6ffed;
+      color: #389e0d;
+      border: 1px solid #b7eb8f;
+    }
+
+    .badge-bag-empty {
+      background: #f5f5f5;
+      color: #8c8c8c;
+      border: 1px solid #d9d9d9;
+    }
+
+    .badge-unsupported {
+      background: #fff1f0;
+      color: #cf1322;
+      border: 1px solid #ffa39e;
     }
 
     .gift-loading-tip {
@@ -688,16 +811,21 @@
       top: 8px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(24, 25, 28, 0.88);
+      background: rgba(24, 25, 28, 0.92);
       color: #fff;
-      padding: 5px 12px;
-      border-radius: 14px;
+      padding: 6px 12px;
+      border-radius: 10px;
       font-size: 11px;
+      line-height: 1.4;
       pointer-events: none;
       display: none;
       animation: fadeIn 0.2s ease-out;
-      white-space: nowrap;
-      z-index: 10;
+      max-width: 88%;
+      box-sizing: border-box;
+      word-break: break-all;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      z-index: 100;
     }
 
     @keyframes fadeIn {
@@ -907,14 +1035,21 @@
         const card = document.createElement('div');
         card.className = `live-account-card ${acc.isCurrent ? 'is-current' : ''}`;
 
-        let statusPillClass = 'status-pill-online';
-        let statusText = '● 在线';
+        let avatarBorderClass = 'border-online';
+        let accountStatusDesc = '在线';
+
         if (acc.isCurrent) {
-          statusPillClass = 'status-pill-current';
-          statusText = '● 主号';
+          avatarBorderClass = 'border-main';
+          accountStatusDesc = '主号';
         } else if (acc.status === 'expired') {
-          statusPillClass = 'status-pill-expired';
-          statusText = '● 凭据失效';
+          avatarBorderClass = 'border-offline';
+          accountStatusDesc = '凭据失效';
+        } else if (acc.status === 'offline' || acc.enabled === false) {
+          avatarBorderClass = 'border-offline';
+          accountStatusDesc = '不在线';
+        } else {
+          avatarBorderClass = 'border-online';
+          accountStatusDesc = '在线';
         }
 
         const bagCount = acc.bagCount ?? 0;
@@ -923,15 +1058,14 @@
         // 主信息行
         const mainRow = document.createElement('div');
         mainRow.className = 'live-card-main-row';
-        mainRow.title = acc.isCurrent ? '当前正在生效的主账号' : `点击一键切换为【${acc.uname || acc.mid}】`;
+        mainRow.title = acc.isCurrent ? '当前正在生效的主账号' : `【${accountStatusDesc}】点击一键切换为【${acc.uname || acc.mid}】`;
         mainRow.innerHTML = `
           <div class="live-avatar-wrap">
-            <img class="live-avatar" src="${acc.face || 'https://static.hdslb.com/images/member/noface.gif'}" onerror="this.src='https://static.hdslb.com/images/member/noface.gif'" />
+            <img class="live-avatar ${avatarBorderClass}" src="${acc.face || 'https://static.hdslb.com/images/member/noface.gif'}" onerror="this.src='https://static.hdslb.com/images/member/noface.gif'" />
           </div>
           <div class="live-info-col">
             <div class="live-name-row">
               <span class="live-name" title="${acc.uname || acc.mid}">${acc.uname || acc.mid}</span>
-              <span class="live-status-pill ${statusPillClass}">${statusText}</span>
             </div>
           </div>
           <div class="live-assets-row">
@@ -1118,50 +1252,219 @@
               }
 
               giftDrawer.innerHTML = '';
-              res.gifts.forEach(gift => {
-                const row = document.createElement('div');
-                row.className = 'gift-item-row';
-                row.title = `点击送出 1 个【${gift.name}】（${gift.battery}电池）`;
-                row.innerHTML = `
-                  ${gift.img ? `<img class="gift-item-img" src="${gift.img}" onerror="this.style.display='none'" />` : '<span style="width:20px;flex-shrink:0;"></span>'}
-                  <span class="gift-item-name">${gift.name}</span>
-                  <span class="gift-item-price">🔋${gift.battery}</span>
-                `;
 
-                row.addEventListener('click', async (e) => {
-                  e.stopPropagation();
-                  if (row.classList.contains('sending')) return;
-                  if (acc.battery < gift.battery) {
-                    showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需${gift.battery}，余${acc.battery}）`);
-                    return;
-                  }
-                  row.classList.add('sending');
-                  try {
-                    const sendRes = await chrome.runtime.sendMessage({
-                      action: 'SEND_GOLD_GIFT',
-                      mid: acc.mid,
-                      roomId: pageCtx.liveShortId,
-                      giftId: gift.id,
-                      giftNum: 1
-                    });
-                    if (sendRes && sendRes.success) {
-                      acc.battery = Math.max(0, (acc.battery ?? 0) - gift.battery);
-                      const batNum = mainRow.querySelector('.battery-num');
-                      if (batNum) batNum.textContent = acc.battery;
-                      batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
-                      showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
+              const allGifts = res.gifts;
+              const batteryGifts = allGifts.filter(g => g.category === 'battery');
+              const bagGifts = allGifts.filter(g => g.category === 'bag');
+              const unsupportedGifts = allGifts.filter(g => g.category === 'unsupported');
+
+              // 1. 创建 Tab 栏
+              const tabsRow = document.createElement('div');
+              tabsRow.className = 'gift-drawer-tabs';
+              tabsRow.innerHTML = `
+                <button class="gift-tab-btn active" data-tab="battery">🔋 电池礼物 (${batteryGifts.length})</button>
+                <button class="gift-tab-btn" data-tab="bag">🎒 包裹专属 (${bagGifts.length})</button>
+                ${unsupportedGifts.length > 0 ? `<button class="gift-tab-btn" data-tab="unsupported">🚫 不支持/限定 (${unsupportedGifts.length})</button>` : ''}
+                <button class="gift-tab-btn" data-tab="all">全部 (${allGifts.length})</button>
+              `;
+
+              // 2. 礼物滚动列表容器
+              const listScroll = document.createElement('div');
+              listScroll.className = 'gift-list-scroll';
+
+              let currentTab = 'battery';
+
+              function renderTabGifts(tabName) {
+                listScroll.innerHTML = '';
+                let targetList = [];
+                if (tabName === 'battery') targetList = batteryGifts;
+                else if (tabName === 'bag') targetList = bagGifts;
+                else if (tabName === 'unsupported') targetList = unsupportedGifts;
+                else targetList = allGifts;
+
+                if (targetList.length === 0) {
+                  listScroll.innerHTML = '<div class="gift-loading-tip">该分类下暂无礼物</div>';
+                  return;
+                }
+
+                targetList.forEach(gift => {
+                  const row = document.createElement('div');
+                  row.className = 'gift-item-row';
+
+                  // 匹配当前账号背包中是否有此道具
+                  const myBagItem = Array.isArray(acc.bagItems)
+                    ? acc.bagItems.find(b => String(b.giftId) === String(gift.id))
+                    : null;
+
+                  let badgeHtml = '';
+                  let rowExtraClass = '';
+
+                  if (gift.isUnsupported) {
+                    rowExtraClass = 'is-unsupported';
+                    badgeHtml = `<span class="gift-item-badge badge-unsupported" title="${gift.unsupportedReason}">🚫 ${gift.unsupportedReason || '不支持'}</span>`;
+                    row.title = `【当前直播间不支持】${gift.unsupportedReason}`;
+                  } else if (gift.isBagOnly) {
+                    if (myBagItem && myBagItem.giftNum > 0) {
+                      badgeHtml = `<span class="gift-item-badge badge-bag-has">🎒x${myBagItem.giftNum}</span>`;
+                      row.title = `【包裹专属】背包剩余 ${myBagItem.giftNum} 个，点击直接送出 1 个`;
                     } else {
-                      showToast(sendRes?.message || '送礼失败');
+                      rowExtraClass = 'is-bag-empty';
+                      badgeHtml = `<span class="gift-item-badge badge-bag-empty">🎒无库存</span>`;
+                      row.title = `【包裹专属】只能从背包送出，当前背包无库存`;
                     }
-                  } catch (err) {
-                    showToast(`送礼异常: ${err.message}`);
-                  } finally {
-                    row.classList.remove('sending');
+                  } else {
+                    badgeHtml = `<span class="gift-item-badge badge-battery">🔋${gift.battery}</span>`;
+                    row.title = `【电池礼物】点击送出 1 个【${gift.name}】（消耗 ${gift.battery} 电池）`;
                   }
-                });
 
-                giftDrawer.appendChild(row);
+                  if (rowExtraClass) row.classList.add(rowExtraClass);
+
+                  row.innerHTML = `
+                    ${gift.img ? `<img class="gift-item-img" src="${gift.img}" onerror="this.style.display='none'" />` : '<span style="width:20px;flex-shrink:0;"></span>'}
+                    <span class="gift-item-name">${gift.name}</span>
+                    ${badgeHtml}
+                  `;
+
+                  row.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (row.classList.contains('sending')) return;
+
+                    // 1. 若为不支持礼物，友好提示
+                    if (gift.isUnsupported) {
+                      showToast(`⚠️ 【${gift.name}】在当前直播间不支持赠送 (${gift.unsupportedReason || '限定礼物'})`);
+                      return;
+                    }
+
+                    // 2. 若为包裹专属礼物
+                    if (gift.isBagOnly) {
+                      if (!myBagItem || myBagItem.giftNum <= 0) {
+                        showToast(`⚠️ 【${gift.name}】只能从包裹送出，当前账号背包中无库存`);
+                        return;
+                      }
+
+                      // 背包中有道具，直接走送背包道具接口
+                      row.classList.add('sending');
+                      try {
+                        const sendBagRes = await chrome.runtime.sendMessage({
+                          action: 'SEND_SINGLE_BAG_GIFT',
+                          mid: acc.mid,
+                          roomId: pageCtx.liveShortId,
+                          bagId: myBagItem.bagId,
+                          giftId: gift.id,
+                          giftNum: 1
+                        });
+
+                        if (sendBagRes && sendBagRes.success) {
+                          myBagItem.giftNum = Math.max(0, myBagItem.giftNum - 1);
+                          if (acc.bagCount !== undefined && acc.bagCount > 0) {
+                            acc.bagCount = Math.max(0, acc.bagCount - 1);
+                            const bagNum = mainRow.querySelector('.bag-count-num');
+                            if (bagNum) bagNum.textContent = acc.bagCount;
+                          }
+                          showToast(`✔【${acc.uname || acc.mid}】已送出包裹【${gift.name}】x1`);
+                          renderTabGifts(currentTab);
+                        } else {
+                          showToast(sendBagRes?.message || '赠送失败');
+                        }
+                      } catch (err) {
+                        showToast(`赠送异常: ${err.message}`);
+                      } finally {
+                        row.classList.remove('sending');
+                      }
+                      return;
+                    }
+
+                    // 3. 正常电池礼物扣除赠送
+                    if (acc.battery < gift.battery) {
+                      showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需${gift.battery}，余${acc.battery}）`);
+                      return;
+                    }
+
+                    row.classList.add('sending');
+                    try {
+                      const sendRes = await chrome.runtime.sendMessage({
+                        action: 'SEND_GOLD_GIFT',
+                        mid: acc.mid,
+                        roomId: pageCtx.liveShortId,
+                        giftId: gift.id,
+                        price: gift.price,
+                        giftNum: 1
+                      });
+                      if (sendRes && sendRes.success) {
+                        acc.battery = Math.max(0, (acc.battery ?? 0) - gift.battery);
+                        const batNum = mainRow.querySelector('.battery-num');
+                        if (batNum) batNum.textContent = acc.battery;
+                        batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
+                        showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
+                      } else {
+                        showToast(sendRes?.message || '送礼失败');
+                      }
+                    } catch (err) {
+                      showToast(`送礼异常: ${err.message}`);
+                    } finally {
+                      row.classList.remove('sending');
+                    }
+                  });
+
+                  listScroll.appendChild(row);
+                });
+              }
+
+              // 1. 鼠标滚轮直接转换为左右横向滚动
+              tabsRow.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0) {
+                  e.preventDefault();
+                  tabsRow.scrollLeft += e.deltaY;
+                }
+              }, { passive: false });
+
+              // 2. 鼠标按住拖拽左右滑动
+              let isDown = false;
+              let startX = 0;
+              let scrollLeftStart = 0;
+
+              tabsRow.addEventListener('mousedown', (e) => {
+                isDown = true;
+                tabsRow.classList.add('is-dragging');
+                startX = e.pageX - tabsRow.offsetLeft;
+                scrollLeftStart = tabsRow.scrollLeft;
               });
+
+              tabsRow.addEventListener('mouseleave', () => {
+                isDown = false;
+                tabsRow.classList.remove('is-dragging');
+              });
+
+              tabsRow.addEventListener('mouseup', () => {
+                isDown = false;
+                tabsRow.classList.remove('is-dragging');
+              });
+
+              tabsRow.addEventListener('mousemove', (e) => {
+                if (!isDown) return;
+                e.preventDefault();
+                const x = e.pageX - tabsRow.offsetLeft;
+                const walk = (x - startX) * 1.5; // 滑动灵敏度
+                tabsRow.scrollLeft = scrollLeftStart - walk;
+              });
+
+              // 3. Tab 切换事件与点击自动居中滚动
+              tabsRow.querySelectorAll('.gift-tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  tabsRow.querySelectorAll('.gift-tab-btn').forEach(b => b.classList.remove('active'));
+                  btn.classList.add('active');
+                  btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                  currentTab = btn.dataset.tab;
+                  renderTabGifts(currentTab);
+                });
+              });
+
+              giftDrawer.appendChild(tabsRow);
+              giftDrawer.appendChild(listScroll);
+
+              // 默认渲染电池礼物 Tab
+              renderTabGifts(currentTab);
             } catch (err) {
               giftDrawer.innerHTML = `<div class="gift-loading-tip">加载失败: ${err.message}</div>`;
             }
