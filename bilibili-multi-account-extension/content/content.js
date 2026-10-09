@@ -441,6 +441,15 @@
       background: #fff7e6;
       color: #fa8c16;
       border: 1px solid #ffe7ba;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .asset-tag-battery:hover {
+      background: #ffe7ba;
+      border-color: #ffd591;
+      transform: translateY(-1px);
     }
 
     .asset-tag-bag {
@@ -574,6 +583,78 @@
       color: #9499a0;
       text-align: center;
       padding: 4px 0;
+    }
+
+    /* 礼物列表抽屉 */
+    .gift-drawer {
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      background: #fffbf0;
+      border-radius: 6px;
+      padding: 5px 7px;
+      margin-top: 2px;
+      border: 1px solid #ffe7ba;
+      animation: drawerFade 0.15s ease;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .gift-item-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 3px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border-bottom: 1px dashed #ffe7ba;
+      user-select: none;
+    }
+
+    .gift-item-row:last-child {
+      border-bottom: none;
+    }
+
+    .gift-item-row:hover {
+      background: #fff0cc;
+    }
+
+    .gift-item-row.sending {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .gift-item-img {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .gift-item-name {
+      font-size: 11px;
+      font-weight: 500;
+      color: #18191c;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .gift-item-price {
+      font-size: 10px;
+      font-weight: 600;
+      color: #fa8c16;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .gift-loading-tip {
+      font-size: 10px;
+      color: #9499a0;
+      text-align: center;
+      padding: 6px 0;
     }
 
     .actions-footer {
@@ -854,7 +935,7 @@
             </div>
           </div>
           <div class="live-assets-row">
-            <span class="live-asset-tag asset-tag-battery" title="直播间当前电池余额">🔋 ${acc.battery ?? 0}电池</span>
+            <span class="live-asset-tag asset-tag-battery" title="点击展开直播间礼物列表">🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▾</span>
             <span class="live-asset-tag asset-tag-bag" title="点击展开/折叠背包道具明细">🎒 <b class="bag-count-num">${bagCount}</b>件 ▾</span>
           </div>
         `;
@@ -969,7 +1050,7 @@
 
         renderDrawerItems();
 
-        // 点击背包标签展开/折叠抽屉
+        // 点击背包标签展开/折叠背包抽屉（同时关闭礼物抽屉）
         const bagTag = mainRow.querySelector('.asset-tag-bag');
         if (bagTag) {
           bagTag.addEventListener('click', (e) => {
@@ -977,6 +1058,113 @@
             const isOpen = drawer.style.display === 'flex';
             drawer.style.display = isOpen ? 'none' : 'flex';
             bagTag.innerHTML = `🎒 <b class="bag-count-num">${acc.bagCount ?? 0}</b>件 ${isOpen ? '▾' : '▴'}`;
+            // 关闭礼物抽屉
+            if (!isOpen) {
+              giftDrawer.style.display = 'none';
+              const batTag = mainRow.querySelector('.asset-tag-battery');
+              if (batTag) batTag.innerHTML = `🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▾`;
+            }
+          });
+        }
+
+        // 礼物抽屉容器
+        const giftDrawer = document.createElement('div');
+        giftDrawer.className = 'gift-drawer';
+        let giftListLoaded = false;
+
+        // 点击电池标签展开/折叠礼物抽屉（同时关闭背包抽屉）
+        const batteryTag = mainRow.querySelector('.asset-tag-battery');
+        if (batteryTag) {
+          batteryTag.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const isOpen = giftDrawer.style.display === 'flex';
+
+            if (isOpen) {
+              giftDrawer.style.display = 'none';
+              batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▾`;
+              return;
+            }
+
+            // 关闭背包抽屉
+            drawer.style.display = 'none';
+            bagTag && (bagTag.innerHTML = `🎒 <b class="bag-count-num">${acc.bagCount ?? 0}</b>件 ▾`);
+
+            // 展开礼物抽屉
+            giftDrawer.style.display = 'flex';
+            batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▴`;
+
+            // 首次展开时才拉列表
+            if (giftListLoaded) return;
+            giftListLoaded = true;
+
+            const pageCtx = getPageContext();
+            if (!pageCtx.isLive || !pageCtx.liveShortId) {
+              giftDrawer.innerHTML = '<div class="gift-loading-tip">未检测到直播间</div>';
+              return;
+            }
+
+            giftDrawer.innerHTML = '<div class="gift-loading-tip">正在加载礼物列表...</div>';
+
+            try {
+              const res = await chrome.runtime.sendMessage({
+                action: 'GET_ROOM_GIFT_LIST',
+                mid: acc.mid,
+                roomId: pageCtx.liveShortId
+              });
+
+              if (!res || !res.success || !res.gifts || res.gifts.length === 0) {
+                giftDrawer.innerHTML = '<div class="gift-loading-tip">暂无可用礼物</div>';
+                return;
+              }
+
+              giftDrawer.innerHTML = '';
+              res.gifts.forEach(gift => {
+                const row = document.createElement('div');
+                row.className = 'gift-item-row';
+                row.title = `点击送出 1 个【${gift.name}】（${gift.battery}电池）`;
+                row.innerHTML = `
+                  ${gift.img ? `<img class="gift-item-img" src="${gift.img}" onerror="this.style.display='none'" />` : '<span style="width:20px;flex-shrink:0;"></span>'}
+                  <span class="gift-item-name">${gift.name}</span>
+                  <span class="gift-item-price">🔋${gift.battery}</span>
+                `;
+
+                row.addEventListener('click', async (e) => {
+                  e.stopPropagation();
+                  if (row.classList.contains('sending')) return;
+                  if (acc.battery < gift.battery) {
+                    showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需${gift.battery}，余${acc.battery}）`);
+                    return;
+                  }
+                  row.classList.add('sending');
+                  try {
+                    const sendRes = await chrome.runtime.sendMessage({
+                      action: 'SEND_GOLD_GIFT',
+                      mid: acc.mid,
+                      roomId: pageCtx.liveShortId,
+                      giftId: gift.id,
+                      giftNum: 1
+                    });
+                    if (sendRes && sendRes.success) {
+                      acc.battery = Math.max(0, (acc.battery ?? 0) - gift.battery);
+                      const batNum = mainRow.querySelector('.battery-num');
+                      if (batNum) batNum.textContent = acc.battery;
+                      batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
+                      showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
+                    } else {
+                      showToast(sendRes?.message || '送礼失败');
+                    }
+                  } catch (err) {
+                    showToast(`送礼异常: ${err.message}`);
+                  } finally {
+                    row.classList.remove('sending');
+                  }
+                });
+
+                giftDrawer.appendChild(row);
+              });
+            } catch (err) {
+              giftDrawer.innerHTML = `<div class="gift-loading-tip">加载失败: ${err.message}</div>`;
+            }
           });
         }
 
@@ -1008,6 +1196,7 @@
 
         card.appendChild(mainRow);
         card.appendChild(drawer);
+        card.appendChild(giftDrawer);
         liveAccountsList.appendChild(card);
       });
     } catch (_) {

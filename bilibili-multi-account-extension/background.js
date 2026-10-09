@@ -476,6 +476,66 @@ async function sendFreeGiftAll(roomId) {
 }
 
 /**
+ * 获取直播间全部可送礼物列表（金瓜子礼物，按价格升序）
+ */
+async function fetchRoomGiftList(account, realRoomId) {
+  const res = await fetchWithAccount(
+    account,
+    `https://api.live.bilibili.com/xlive/web-room/v1/gift/room_gift_list?room_id=${realRoomId}&area_id=&area_parent_id=&page=1&platform=pc`,
+    { headers: { 'Accept': 'application/json' } }
+  );
+
+  if (res && res.code === 0 && res.data && Array.isArray(res.data.list)) {
+    return res.data.list
+      .filter(g => g.type === 2) // type=2 金瓜子礼物（付费）
+      .map(g => ({
+        id: g.id,
+        name: g.name,
+        price: g.price,                        // 金瓜子
+        battery: Math.ceil(g.price / 100),     // 电池 (1电池=100金瓜子)
+        img: g.img_basic || g.img || ''
+      }))
+      .sort((a, b) => a.price - b.price);
+  }
+  return [];
+}
+
+/**
+ * 单账号送出直播间金瓜子礼物（扣电池）
+ */
+async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftNum = 1) {
+  const body = new URLSearchParams({
+    uid: String(account.mid),
+    gift_id: String(giftId),
+    ruid: String(anchorUid),
+    send_ruid: '0',
+    gift_num: String(giftNum),
+    coin_type: 'gold',
+    bag_id: '0',
+    platform: 'pc',
+    biz_code: 'live',
+    biz_id: String(roomId),
+    rnd: String(Math.floor(Date.now() / 1000)),
+    storm_beat_id: '0',
+    metadata: '',
+    price: '0',
+    csrf: account.bili_jct || '',
+    csrf_token: account.bili_jct || ''
+  });
+
+  const res = await fetchWithAccount(account, 'https://api.live.bilibili.com/xlive/revenue/v1/gift/sendWeb?_from_multi_acc=1', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  });
+
+  if (res && res.code === 0) {
+    return { success: true, message: '送礼成功' };
+  }
+  return { success: false, message: res?.message || `送礼失败(${res?.code})` };
+}
+
+/**
  * 获取单个账号在直播间的资产 (电池、背包道具数量) 以及连接状态
  */
 async function fetchAccountLiveAssets(account) {
@@ -1164,6 +1224,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       case 'SEND_SINGLE_BAG_GIFT': {
         const res = await sendSingleBagGift(request);
+        return res;
+      }
+
+      case 'GET_ROOM_GIFT_LIST': {
+        // 用指定 mid 的账号凭据拉礼物列表（礼物列表与账号无关，任意有效账号均可）
+        const accounts = await Storage.getAccounts();
+        const account = accounts.find(a => String(a.mid) === String(request.mid) && a.enabled)
+          || accounts.find(a => a.enabled);
+        if (!account) return { success: false, message: '无可用账号', gifts: [] };
+        const roomDetails = await BiliApi.getRoomDetails(request.roomId);
+        const gifts = await fetchRoomGiftList(account, roomDetails.roomId);
+        return { success: true, gifts };
+      }
+
+      case 'SEND_GOLD_GIFT': {
+        const accounts = await Storage.getAccounts();
+        const account = accounts.find(a => String(a.mid) === String(request.mid));
+        if (!account) return { success: false, message: '未找到账号' };
+        const roomDetails = await BiliApi.getRoomDetails(request.roomId);
+        const res = await sendSingleGoldGift(
+          account,
+          roomDetails.roomId,
+          roomDetails.anchorUid,
+          request.giftId,
+          request.giftNum ?? 1
+        );
         return res;
       }
 
