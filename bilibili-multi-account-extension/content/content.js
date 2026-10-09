@@ -55,8 +55,8 @@
       position: fixed;
       right: 20px;
       bottom: 120px;
-      width: 48px;
-      height: 48px;
+      width: 40px;
+      height: 40px;
       background: linear-gradient(135deg, #fb7299 0%, #f95c89 100%);
       color: #fff;
       border-radius: 50%;
@@ -80,7 +80,7 @@
     }
 
     .fab-icon {
-      font-size: 20px;
+      font-size: 17px;
       font-weight: bold;
     }
 
@@ -624,35 +624,11 @@
       to { opacity: 1; transform: translate(-50%, 0); }
     }
 
-    /* 跟随发言开关 */
-    .follow-danmaku-toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 9px;
-      background: #f4f8ff;
-      border: 1px solid #d6e8ff;
-      border-radius: 7px;
-      margin-bottom: 4px;
-    }
-
-    .toggle-label {
-      font-size: 11px;
-      color: #445566;
-      flex: 1;
-      user-select: none;
-    }
-
-    .toggle-label-hint {
-      font-size: 9px;
-      color: #9499a0;
-      margin-top: 1px;
-    }
-
+    /* 跟随发言开关（内联在标题栏） */
     .toggle-switch {
       position: relative;
-      width: 34px;
-      height: 18px;
+      width: 30px;
+      height: 16px;
       flex-shrink: 0;
       cursor: pointer;
     }
@@ -668,7 +644,7 @@
       position: absolute;
       inset: 0;
       background: #d0d4da;
-      border-radius: 18px;
+      border-radius: 16px;
       transition: background 0.2s;
       cursor: pointer;
     }
@@ -678,8 +654,8 @@
       position: absolute;
       left: 2px;
       top: 2px;
-      width: 14px;
-      height: 14px;
+      width: 12px;
+      height: 12px;
       background: #fff;
       border-radius: 50%;
       box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -691,15 +667,15 @@
     }
 
     .toggle-switch input:checked + .toggle-track::after {
-      transform: translateX(16px);
+      transform: translateX(14px);
     }
 
     .toggle-status-text {
       font-size: 10px;
-      font-weight: 600;
+      font-weight: 500;
       color: #9499a0;
-      min-width: 24px;
-      text-align: right;
+      user-select: none;
+      transition: color 0.2s, opacity 0.2s;
     }
 
     .toggle-status-text.is-on {
@@ -748,20 +724,14 @@
         <div id="live-accounts-section" class="live-accounts-section" style="display: none;">
           <div class="section-label" style="color: #fb7299; margin-bottom: 2px;">
             <span>各账号连接与资产状态</span>
-            <span id="btn-refresh-live-assets" style="font-size: 10px; color: #9499a0; cursor: pointer;" title="点击重新查询各账号电池与背包">🔄 刷新</span>
-          </div>
-
-          <!-- 跟随发言开关 (只控制是否跟随发言，不影响副账号在线状态) -->
-          <div class="follow-danmaku-toggle-row">
-            <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
-              <span class="toggle-label">💬 副账号跟随发言</span>
-              <span class="toggle-label-hint">关闭后副账号仍维持在线，仅停止跟发弹幕</span>
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+              <span id="follow-danmaku-status-text" class="toggle-status-text is-on" title="副账号跟随发言（关闭后副账号仍在线）">💬 跟随发言</span>
+              <label class="toggle-switch" title="开启/关闭副账号跟随发言（不影响副账号在线状态）">
+                <input type="checkbox" id="follow-danmaku-toggle" checked />
+                <span class="toggle-track"></span>
+              </label>
+              <span id="btn-refresh-live-assets" style="font-size: 10px; color: #9499a0; cursor: pointer; margin-left:2px;" title="点击重新查询各账号电池与背包">🔄</span>
             </div>
-            <span id="follow-danmaku-status-text" class="toggle-status-text">开</span>
-            <label class="toggle-switch" title="开启/关闭副账号跟随发言">
-              <input type="checkbox" id="follow-danmaku-toggle" checked />
-              <span class="toggle-track"></span>
-            </label>
           </div>
 
           <div id="live-accounts-list" class="live-accounts-list">
@@ -1062,8 +1032,8 @@
     if (!followDanmakuToggle) return;
     followDanmakuToggle.checked = !!enabled;
     if (followDanmakuStatusText) {
-      followDanmakuStatusText.textContent = enabled ? '开' : '关';
       followDanmakuStatusText.classList.toggle('is-on', !!enabled);
+      followDanmakuStatusText.style.opacity = enabled ? '1' : '0.45';
     }
   }
 
