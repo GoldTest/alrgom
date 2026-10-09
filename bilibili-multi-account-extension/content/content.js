@@ -1253,10 +1253,25 @@
 
               giftDrawer.innerHTML = '';
 
-              const allGifts = res.gifts;
-              const batteryGifts = allGifts.filter(g => g.category === 'battery');
-              const bagGifts = allGifts.filter(g => g.category === 'bag');
+              const allGifts = Array.isArray(res.gifts) ? res.gifts : [];
+
+              // 电池礼物严格按电池消耗量升序排列（1电池 -> 大额电池）
+              const batteryGifts = allGifts
+                .filter(g => g.category === 'battery')
+                .sort((a, b) => (Number(a.battery) - Number(b.battery)) || (Number(a.price) - Number(b.price)));
+
+              // 包裹专属礼物：背包有库存的优先排在前面
+              const bagGifts = allGifts
+                .filter(g => g.category === 'bag')
+                .sort((a, b) => {
+                  const aHas = (Array.isArray(acc.bagItems) && acc.bagItems.some(item => String(item.giftId) === String(a.id) && item.giftNum > 0)) ? 1 : 0;
+                  const bHas = (Array.isArray(acc.bagItems) && acc.bagItems.some(item => String(item.giftId) === String(b.id) && item.giftNum > 0)) ? 1 : 0;
+                  if (aHas !== bHas) return bHas - aHas;
+                  return a.id - b.id;
+                });
+
               const unsupportedGifts = allGifts.filter(g => g.category === 'unsupported');
+              const sortedAllGifts = [...batteryGifts, ...bagGifts, ...unsupportedGifts];
 
               // 1. 创建 Tab 栏
               const tabsRow = document.createElement('div');
@@ -1265,7 +1280,7 @@
                 <button class="gift-tab-btn active" data-tab="battery">🔋 电池礼物 (${batteryGifts.length})</button>
                 <button class="gift-tab-btn" data-tab="bag">🎒 包裹专属 (${bagGifts.length})</button>
                 ${unsupportedGifts.length > 0 ? `<button class="gift-tab-btn" data-tab="unsupported">🚫 不支持/限定 (${unsupportedGifts.length})</button>` : ''}
-                <button class="gift-tab-btn" data-tab="all">全部 (${allGifts.length})</button>
+                <button class="gift-tab-btn" data-tab="all">全部 (${sortedAllGifts.length})</button>
               `;
 
               // 2. 礼物滚动列表容器
@@ -1280,7 +1295,7 @@
                 if (tabName === 'battery') targetList = batteryGifts;
                 else if (tabName === 'bag') targetList = bagGifts;
                 else if (tabName === 'unsupported') targetList = unsupportedGifts;
-                else targetList = allGifts;
+                else targetList = sortedAllGifts;
 
                 if (targetList.length === 0) {
                   listScroll.innerHTML = '<div class="gift-loading-tip">该分类下暂无礼物</div>';
@@ -1397,7 +1412,53 @@
                         batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
                         showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
                       } else {
-                        showToast(sendRes?.message || '送礼失败');
+                        const errMsg = sendRes?.message || '送礼失败';
+
+                        // 1. 遇到 200010 (仅限背包赠送)
+                        if (errMsg.includes('200010')) {
+                          gift.isBagOnly = true;
+                          gift.category = 'bag';
+                          if (myBagItem && myBagItem.giftNum > 0) {
+                            showToast(`⚠️ 【${gift.name}】仅限背包赠送，正尝试消耗背包道具...`);
+                            try {
+                              const sendBagRes = await chrome.runtime.sendMessage({
+                                action: 'SEND_SINGLE_BAG_GIFT',
+                                mid: acc.mid,
+                                roomId: pageCtx.liveShortId,
+                                bagId: myBagItem.bagId,
+                                giftId: gift.id,
+                                giftNum: 1
+                              });
+                              if (sendBagRes && sendBagRes.success) {
+                                myBagItem.giftNum = Math.max(0, myBagItem.giftNum - 1);
+                                if (acc.bagCount !== undefined && acc.bagCount > 0) {
+                                  acc.bagCount = Math.max(0, acc.bagCount - 1);
+                                  const bagNum = mainRow.querySelector('.bag-count-num');
+                                  if (bagNum) bagNum.textContent = acc.bagCount;
+                                }
+                                showToast(`✔【${acc.uname || acc.mid}】已从背包送出【${gift.name}】x1`);
+                              } else {
+                                showToast(sendBagRes?.message || '背包赠送失败');
+                              }
+                            } catch (_) {}
+                          } else {
+                            showToast(`⚠️ 【${gift.name}】仅限背包赠送 (代码 200010)，当前背包无库存`);
+                          }
+                          renderTabGifts(currentTab);
+                          return;
+                        }
+
+                        // 2. 遇到 200036 (该道具不能在这个房间投喂)
+                        if (errMsg.includes('200036')) {
+                          gift.isUnsupported = true;
+                          gift.category = 'unsupported';
+                          gift.unsupportedReason = '非本房间道具';
+                          showToast(`⚠️ 【${gift.name}】不能在这个房间投喂 (代码 200036)`);
+                          renderTabGifts(currentTab);
+                          return;
+                        }
+
+                        showToast(errMsg);
                       }
                     } catch (err) {
                       showToast(`送礼异常: ${err.message}`);

@@ -499,31 +499,69 @@ async function sendFreeGiftAll(roomId) {
 
 /**
  * 获取直播间全部礼物列表（包含电池礼物、包裹专属礼物、不支持/限定礼物分类）
+ * 通过 roomGiftList 精准筛选当前直播间实际开放的活跃礼物，规避 200036 与 200010 错误
  */
 async function fetchRoomGiftList(account, realRoomId) {
-  const res = await fetchWithAccount(
-    account,
-    `https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/giftConfig?platform=pc&room_id=${realRoomId}&area_id=&area_parent_id=&version=0&build=1`,
-    { headers: { 'Accept': 'application/json' } }
-  );
+  try {
+    const [roomRes, configRes] = await Promise.all([
+      fetchWithAccount(
+        account,
+        `https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftList?platform=pc&room_id=${realRoomId}`,
+        { headers: { 'Accept': 'application/json' } }
+      ).catch(() => null),
+      fetchWithAccount(
+        account,
+        `https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/giftConfig?platform=pc&room_id=${realRoomId}&area_id=&area_parent_id=&version=0&build=1`,
+        { headers: { 'Accept': 'application/json' } }
+      ).catch(() => null)
+    ]);
 
-  if (res && res.code === 0 && res.data && Array.isArray(res.data.list)) {
-    const list = res.data.list.map(g => {
-      // 1. 判断是否当前房间不支持 / 专属限定
+    // 当前直播间真正上架开放的活跃礼物 ID 集合
+    const activeRoomGiftMap = new Map();
+    if (roomRes && roomRes.code === 0 && roomRes.data && roomRes.data.gift_config) {
+      const baseList = Array.isArray(roomRes.data.gift_config.base_config?.list) ? roomRes.data.gift_config.base_config.list : [];
+      const roomList = Array.isArray(roomRes.data.gift_config.room_config) ? roomRes.data.gift_config.room_config : [];
+      [...baseList, ...roomList].forEach(g => {
+        if (g && g.id) activeRoomGiftMap.set(g.id, g);
+      });
+    }
+
+    const allConfigList = (configRes && configRes.code === 0 && configRes.data && Array.isArray(configRes.data.list))
+      ? configRes.data.list
+      : [];
+
+    // 合并列表（以全量库为主，兼顾当前房间专属礼物）
+    const giftIdMap = new Map();
+    allConfigList.forEach(g => giftIdMap.set(g.id, g));
+    activeRoomGiftMap.forEach((g, id) => {
+      if (!giftIdMap.has(id)) giftIdMap.set(id, g);
+    });
+
+    const list = Array.from(giftIdMap.values()).map(g => {
+      const isRoomActive = activeRoomGiftMap.has(g.id);
       const isBoundOtherRoom = (g.bind_roomid > 0 && String(g.bind_roomid) !== String(realRoomId));
       const isPrivilegeRequired = (g.privilege_required > 0);
-      const isUnsupported = isBoundOtherRoom || isPrivilegeRequired;
+
+      // 1. 判断是否当前房间不支持 / 专属限定
+      let isUnsupported = false;
       let unsupportedReason = '';
+
       if (isBoundOtherRoom) {
+        isUnsupported = true;
         unsupportedReason = `房间限定(${g.bind_roomid})`;
       } else if (isPrivilegeRequired) {
+        isUnsupported = true;
         unsupportedReason = '需特权身份';
+      } else if (activeRoomGiftMap.size > 0 && !isRoomActive) {
+        // 未在当前房间礼物面板上架的远古/下架/其他活动道具（避免触发 200036）
+        isUnsupported = true;
+        unsupportedReason = '非本房间上架道具';
       }
 
       // 2. 判断是否只能从包裹/背包送出 (免费活动道具/银瓜子道具/价格为0的包裹道具)
       const isBagOnly = !isUnsupported && (g.price === 0 || g.coin_type === 'silver');
 
-      // 3. 正常电池金瓜子礼物
+      // 3. 正常电池金瓜子礼物 (在当前房间真正上架且有价格的金瓜子礼物)
       const isBattery = !isUnsupported && !isBagOnly && (g.coin_type === 'gold' && g.price > 0);
 
       let category = 'battery';
@@ -549,15 +587,23 @@ async function fetchRoomGiftList(account, realRoomId) {
       };
     });
 
-    // 默认排序：电池礼物按价格升序，包裹专属按 id 排序
+    // 严格排序：
+    // 1. 电池礼物按电池数升序（从 1 电池到大额电池）
+    // 2. 其余分类按 category 顺序
     return list.sort((a, b) => {
       if (a.category === 'battery' && b.category === 'battery') {
-        return a.price - b.price;
+        return (Number(a.battery) - Number(b.battery)) || (Number(a.price) - Number(b.price));
       }
+      if (a.category === 'battery') return -1;
+      if (b.category === 'battery') return 1;
+      if (a.category === 'bag') return -1;
+      if (b.category === 'bag') return 1;
       return 0;
     });
+  } catch (err) {
+    console.error('获取直播间礼物配置失败:', err);
+    return [];
   }
-  return [];
 }
 
 /**
