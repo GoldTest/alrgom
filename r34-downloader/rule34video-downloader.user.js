@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Rule34Video 快速下载
 // @namespace    https://github.com/GoldTest/alrgom
-// @version      1.5.0
+// @version      1.5.1
 // @description  在视频卡片上固定显示下载按钮，下载后持久化标记"已下载"。右下角配置面板。
 // @author       GoldTest
 // @match        https://rule34video.com/*
@@ -61,7 +61,7 @@
     .r34dl-wrap {
       position: absolute !important;
       bottom: 4px !important;
-      left: 4px !important;
+      right: 4px !important;
       z-index: 9999 !important;
       pointer-events: auto !important;
     }
@@ -241,7 +241,7 @@
   }
 
   function _doInject() {
-    const cards = document.querySelectorAll('[data-video-card-id]:not([data-r34dl])');
+    const cards = document.querySelectorAll('[data-video-card-id]:not([data-r34dl]), .item:not([data-r34dl])');
     if (!cards.length) return;
 
     cards.forEach(card => {
@@ -352,7 +352,7 @@
         <button id="r34dl-clear">清空记录</button>
       </div>
       <div class="r34dl-tip">
-        · 封面左下角固定显示 <b>⬇ 下载</b> 按钮。<br>
+        · 封面右下角固定显示 <b>⬇ 下载</b> 按钮。<br>
         · 下载后变绿，左上角出现 <b>✓ 已下载</b>。<br>
         · 绿色按钮 hover 变 🔁 可重新下载。
       </div>
