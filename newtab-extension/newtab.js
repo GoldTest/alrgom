@@ -480,11 +480,51 @@ function initSyncStorage() {
 
 initSyncStorage();
 
-function getFaviconUrl(url) {
+/* ════════════════════════════════
+   ICON FETCH AND CACHE LOGIC
+════════════════════════════════ */
+const ICON_STORAGE_KEY = 'lumina-icons';
+
+function getSavedIcon(hostname) {
   try {
-    const u = new URL(url);
-    return `https://www.google.com/s2/favicons?sz=64&domain=${u.hostname}`;
+    const raw = localStorage.getItem(ICON_STORAGE_KEY);
+    const icons = raw ? JSON.parse(raw) : {};
+    return icons[hostname] || null;
   } catch { return null; }
+}
+
+function saveIconToStorage(hostname, base64) {
+  try {
+    const raw = localStorage.getItem(ICON_STORAGE_KEY);
+    const icons = raw ? JSON.parse(raw) : {};
+    icons[hostname] = base64;
+    localStorage.setItem(ICON_STORAGE_KEY, JSON.stringify(icons));
+  } catch (e) {
+    console.error("保存图标失败:", e);
+  }
+}
+
+async function fetchAndSaveIcon(url, hostname, force = false) {
+  const fetchUrl = `https://icon.horse/icon/${hostname}` + (force ? `?_t=${Date.now()}` : '');
+  try {
+    const res = await fetch(fetchUrl);
+    if (!res.ok) throw new Error('Fetch failed');
+    const blob = await res.blob();
+    
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result;
+        saveIconToStorage(hostname, base64);
+        resolve(base64);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.error("获取图标异常:", err);
+    return null;
+  }
 }
 
 function getInitials(name) { return name.charAt(0).toUpperCase(); }
@@ -502,26 +542,42 @@ function getColorForName(name) {
 function buildFavicon(item) {
   const div = document.createElement('div');
   div.className = 'shortcut-favicon';
-  const faviconUrl = getFaviconUrl(item.url);
-  if (faviconUrl) {
-    const img = document.createElement('img');
-    img.src = faviconUrl;
-    img.alt = item.name;
-    img.onerror = () => {
-      img.remove();
-      div.textContent = getInitials(item.name);
-      Object.assign(div.style, {
-        background: getColorForName(item.name),
-        color: '#fff', fontSize: '18px', fontWeight: '700',
-      });
-    };
-    div.appendChild(img);
-  } else {
+  
+  let hostname;
+  try {
+    hostname = new URL(item.url).hostname;
+  } catch {
+    div.textContent = getInitials(item.name);
+    Object.assign(div.style, { background: getColorForName(item.name), color: '#fff', fontSize: '18px', fontWeight: '700' });
+    return div;
+  }
+  
+  const savedBase64 = getSavedIcon(hostname);
+  
+  function applyFallback() {
+    div.innerHTML = '';
     div.textContent = getInitials(item.name);
     Object.assign(div.style, {
       background: getColorForName(item.name),
       color: '#fff', fontSize: '18px', fontWeight: '700',
     });
+  }
+
+  if (savedBase64) {
+    const img = document.createElement('img');
+    img.src = savedBase64;
+    img.alt = item.name;
+    img.onerror = applyFallback;
+    div.appendChild(img);
+  } else {
+    const img = document.createElement('img');
+    img.src = `https://icon.horse/icon/${hostname}`;
+    img.alt = item.name;
+    img.onerror = applyFallback;
+    div.appendChild(img);
+    
+    // 静默获取并保存到本地（以便下次进新标签页时立即读取不闪烁）
+    fetchAndSaveIcon(item.url, hostname, false);
   }
   return div;
 }
@@ -533,6 +589,7 @@ function buildFavicon(item) {
 const contextMenu   = document.getElementById('context-menu');
 const ctxOpenNew    = document.getElementById('ctx-open-new');
 const ctxCopyUrl    = document.getElementById('ctx-copy-url');
+const ctxRefreshIcon = document.getElementById('ctx-refresh-icon');
 const ctxEdit       = document.getElementById('ctx-edit');
 const ctxDelete     = document.getElementById('ctx-delete');
 
@@ -617,6 +674,47 @@ if (ctxCopyUrl) {
         }, 500);
         return;
       }
+    }
+    hideContextMenu();
+  });
+}
+
+if (ctxRefreshIcon) {
+  ctxRefreshIcon.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (activeContextItem) {
+      try {
+        const hostname = new URL(activeContextItem.url).hostname;
+        const iconSpan = ctxRefreshIcon.querySelector('span');
+        const orig = iconSpan.textContent;
+        iconSpan.textContent = '获取中...';
+        
+        const base64 = await fetchAndSaveIcon(activeContextItem.url, hostname, true);
+        if (base64) {
+          iconSpan.textContent = '获取成功';
+          if (activeContextCard) {
+            const img = activeContextCard.querySelector('.shortcut-favicon img');
+            if (img) {
+              img.src = base64;
+            } else {
+              const favEl = activeContextCard.querySelector('.shortcut-favicon');
+              favEl.innerHTML = '';
+              Object.assign(favEl.style, { background: 'rgba(255,255,255,0.15)', color: '' });
+              const newImg = document.createElement('img');
+              newImg.src = base64;
+              newImg.alt = activeContextItem.name;
+              favEl.appendChild(newImg);
+            }
+          }
+        } else {
+          iconSpan.textContent = '获取失败';
+        }
+        setTimeout(() => {
+          iconSpan.textContent = orig;
+          hideContextMenu();
+        }, 800);
+        return;
+      } catch (err) {}
     }
     hideContextMenu();
   });
