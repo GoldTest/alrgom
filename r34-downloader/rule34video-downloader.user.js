@@ -254,10 +254,11 @@
       const videoId  = extractVideoId(videoUrl);
       if (!videoId) return;
 
-      // 图片容器（尝试多种选择器）
+      // 图片容器（尝试多种选择器，收藏页等可能没有额外 div 包裹直接是 a 标签）
       const iw = card.querySelector('.wrap_image')
               || card.querySelector('.img')
-              || aEl.querySelector('div');
+              || aEl.querySelector('div')
+              || aEl;
       if (!iw) return;
 
       // 保证相对定位
