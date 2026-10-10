@@ -64,7 +64,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
+      cursor: grab;
+      touch-action: none;
       z-index: 2147483647;
       user-select: none;
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
@@ -73,6 +74,13 @@
     .widget-fab:hover {
       transform: scale(1.08);
       box-shadow: 0 6px 20px rgba(251, 114, 153, 0.6);
+    }
+
+    .widget-fab.is-dragging {
+      cursor: grabbing !important;
+      transform: scale(1.08) !important;
+      box-shadow: 0 8px 24px rgba(251, 114, 153, 0.7) !important;
+      transition: none !important;
     }
 
     .widget-fab:active {
@@ -132,6 +140,14 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .panel-header:active,
+    .panel-header.is-dragging {
+      cursor: grabbing;
     }
 
     .main-account-box {
@@ -890,6 +906,189 @@
     .toggle-status-text.is-on {
       color: #fb7299;
     }
+
+    /* 定时循环送礼控制台 */
+    .periodic-gift-box {
+      background: #fffdf5;
+      border: 1px solid #ffe58f;
+      border-radius: 8px;
+      padding: 7px 9px;
+      margin-bottom: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      box-shadow: 0 1px 4px rgba(250, 140, 22, 0.08);
+      animation: drawerFade 0.15s ease;
+    }
+
+    .periodic-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .periodic-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #d46b08;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .periodic-target-badge {
+      font-size: 10px;
+      color: #873800;
+      background: #fff7e6;
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px dashed #ffd591;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+      font-weight: 500;
+    }
+
+    .periodic-inputs-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .periodic-inputs-wrap {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      color: #595959;
+    }
+
+    .periodic-input {
+      width: 38px;
+      height: 22px;
+      border: 1px solid #d9d9d9;
+      border-radius: 4px;
+      padding: 0 2px;
+      font-size: 11px;
+      text-align: center;
+      color: #18191c;
+      background: #fff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .periodic-input:focus {
+      border-color: #fa8c16;
+      box-shadow: 0 0 0 2px rgba(250, 140, 22, 0.15);
+    }
+
+    .btn-periodic-toggle {
+      background: #fa8c16;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-periodic-toggle:hover:not(:disabled) {
+      background: #d46b08;
+    }
+
+    .btn-periodic-toggle.is-running {
+      background: #ff4d4f;
+      animation: pulse-stop 1.8s infinite;
+    }
+
+    .btn-periodic-toggle.is-running:hover {
+      background: #cf1322;
+    }
+
+    @keyframes pulse-stop {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.82; }
+    }
+
+    .btn-periodic-toggle:disabled {
+      background: #d9d9d9;
+      color: #8c8c8c;
+      cursor: not-allowed;
+    }
+
+    .periodic-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #389e0d;
+      background: #f6ffed;
+      border: 1px solid #b7eb8f;
+      border-radius: 4px;
+      padding: 2px 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .periodic-status-bar.is-error {
+      color: #cf1322;
+      background: #fff1f0;
+      border-color: #ffa39e;
+    }
+
+    .periodic-status-bar.is-stopped {
+      color: #595959;
+      background: #f5f5f5;
+      border-color: #d9d9d9;
+    }
+
+    .gift-item-btns {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+
+    .btn-gift-mini-action {
+      border: none;
+      border-radius: 3px;
+      padding: 2px 5px;
+      font-size: 9px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+
+    .btn-gift-send-one {
+      background: #fb7299;
+      color: #fff;
+    }
+
+    .btn-gift-send-one:hover:not(:disabled) {
+      background: #f95c89;
+    }
+
+    .btn-gift-select-loop {
+      background: #fa8c16;
+      color: #fff;
+    }
+
+    .btn-gift-select-loop:hover {
+      background: #d46b08;
+    }
+
+    .gift-item-row.is-selected-target {
+      background: #fff0d6 !important;
+      border-color: #fa8c16 !important;
+    }
   `;
 
   shadow.innerHTML = `
@@ -1003,7 +1202,221 @@
     }, duration);
   }
 
+  // ── 悬浮球与面板拖拽逻辑 ──────────────────────────────────────
+  let isFabDragging = false;
+  let lastFabDragTime = 0;
+
+  function restoreFabPosition() {
+    try {
+      const saved = localStorage.getItem('bili_widget_fab_pos');
+      if (saved) {
+        const pos = JSON.parse(saved);
+        if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+          const maxL = Math.max(0, window.innerWidth - 44);
+          const maxT = Math.max(0, window.innerHeight - 44);
+          const curL = Math.max(0, Math.min(maxL, pos.left));
+          const curT = Math.max(0, Math.min(maxT, pos.top));
+          fab.style.left = `${curL}px`;
+          fab.style.top = `${curT}px`;
+          fab.style.right = 'auto';
+          fab.style.bottom = 'auto';
+        }
+      }
+    } catch (_) {}
+  }
+
+  function setupFabDrag() {
+    let startX = 0;
+    let startY = 0;
+    let initLeft = 0;
+    let initTop = 0;
+    let hasMoved = false;
+
+    restoreFabPosition();
+
+    const onPointerMove = (e) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!hasMoved && Math.hypot(dx, dy) > 4) {
+        hasMoved = true;
+        isFabDragging = true;
+        fab.classList.add('is-dragging');
+        fab.style.transition = 'none';
+      }
+      if (hasMoved) {
+        const maxL = Math.max(0, window.innerWidth - fab.offsetWidth);
+        const maxT = Math.max(0, window.innerHeight - fab.offsetHeight);
+        const curL = Math.max(0, Math.min(maxL, initLeft + dx));
+        const curT = Math.max(0, Math.min(maxT, initTop + dy));
+        fab.style.left = `${curL}px`;
+        fab.style.top = `${curT}px`;
+        fab.style.right = 'auto';
+        fab.style.bottom = 'auto';
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+
+      fab.classList.remove('is-dragging');
+      fab.style.transition = '';
+
+      if (hasMoved) {
+        lastFabDragTime = Date.now();
+        try {
+          localStorage.setItem('bili_widget_fab_pos', JSON.stringify({
+            left: fab.offsetLeft,
+            top: fab.offsetTop
+          }));
+        } catch (_) {}
+      }
+      setTimeout(() => {
+        isFabDragging = false;
+      }, 60);
+    };
+
+    fab.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = fab.getBoundingClientRect();
+      initLeft = rect.left;
+      initTop = rect.top;
+      hasMoved = false;
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    });
+  }
+
+  function applyPanelPosition() {
+    try {
+      const saved = localStorage.getItem('bili_widget_panel_pos');
+      if (saved) {
+        const pos = JSON.parse(saved);
+        if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+          const maxL = Math.max(0, window.innerWidth - 305);
+          const maxT = Math.max(0, window.innerHeight - 300);
+          panel.style.left = `${Math.max(0, Math.min(maxL, pos.left))}px`;
+          panel.style.top = `${Math.max(0, Math.min(maxT, pos.top))}px`;
+          panel.style.right = 'auto';
+          panel.style.bottom = 'auto';
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 若未曾拖拽过面板，智能靠拢当前悬浮球
+    if (fab.style.left && fab.style.left !== 'auto') {
+      const fabRect = fab.getBoundingClientRect();
+      let targetL = fabRect.left - 305;
+      if (targetL < 10) targetL = fabRect.right + 10;
+      let targetT = Math.min(fabRect.top, window.innerHeight - 450);
+      const maxL = Math.max(0, window.innerWidth - 305);
+      const maxT = Math.max(0, window.innerHeight - 300);
+      panel.style.left = `${Math.max(0, Math.min(maxL, targetL))}px`;
+      panel.style.top = `${Math.max(0, Math.min(maxT, targetT))}px`;
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+    }
+  }
+
+  function setupPanelDrag() {
+    const header = shadow.querySelector('.panel-header');
+    if (!header) return;
+
+    header.title = '按住此处可拖拽调整面板位置';
+
+    let startX = 0;
+    let startY = 0;
+    let initLeft = 0;
+    let initTop = 0;
+    let hasMoved = false;
+
+    const onPointerMove = (e) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!hasMoved && Math.hypot(dx, dy) > 4) {
+        hasMoved = true;
+        header.classList.add('is-dragging');
+        panel.style.transition = 'none';
+        panel.style.animation = 'none';
+      }
+      if (hasMoved) {
+        const maxL = Math.max(0, window.innerWidth - panel.offsetWidth);
+        const maxT = Math.max(0, window.innerHeight - panel.offsetHeight);
+        const curL = Math.max(0, Math.min(maxL, initLeft + dx));
+        const curT = Math.max(0, Math.min(maxT, initTop + dy));
+        panel.style.left = `${curL}px`;
+        panel.style.top = `${curT}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+
+      header.classList.remove('is-dragging');
+      panel.style.transition = '';
+
+      if (hasMoved) {
+        try {
+          localStorage.setItem('bili_widget_panel_pos', JSON.stringify({
+            left: panel.offsetLeft,
+            top: panel.offsetTop
+          }));
+        } catch (_) {}
+      }
+    };
+
+    header.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('#panel-close-btn') || e.target.closest('button') || e.target.closest('input')) {
+        return;
+      }
+
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = panel.getBoundingClientRect();
+      initLeft = rect.left;
+      initTop = rect.top;
+      hasMoved = false;
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    if (fab && fab.style.left && fab.style.left !== 'auto') {
+      const maxL = Math.max(0, window.innerWidth - fab.offsetWidth);
+      const maxT = Math.max(0, window.innerHeight - fab.offsetHeight);
+      fab.style.left = `${Math.max(0, Math.min(maxL, fab.offsetLeft))}px`;
+      fab.style.top = `${Math.max(0, Math.min(maxT, fab.offsetTop))}px`;
+    }
+    if (panel && panel.style.left && panel.style.left !== 'auto') {
+      const maxL = Math.max(0, window.innerWidth - panel.offsetWidth);
+      const maxT = Math.max(0, window.innerHeight - panel.offsetHeight);
+      panel.style.left = `${Math.max(0, Math.min(maxL, panel.offsetLeft))}px`;
+      panel.style.top = `${Math.max(0, Math.min(maxT, panel.offsetTop))}px`;
+    }
+  });
+
+  setupFabDrag();
+  setupPanelDrag();
+
   fab.addEventListener('click', () => {
+    if (isFabDragging || Date.now() - lastFabDragTime < 250) {
+      return;
+    }
+    applyPanelPosition();
     panel.style.display = 'flex';
     fab.style.display = 'none';
     refreshData();
@@ -1013,6 +1426,318 @@
     panel.style.display = 'none';
     fab.style.display = 'flex';
   });
+
+  // ── 直播间定时循环送礼控制中心 ──────────────────────────────────
+  const activePeriodicTasks = new Map();
+  let latestAccountsList = [];
+
+  window.addEventListener('beforeunload', () => {
+    activePeriodicTasks.forEach(task => {
+      if (task.tickId) clearInterval(task.tickId);
+    });
+    activePeriodicTasks.clear();
+  });
+
+  function stopPeriodicTask(mid, reason = '') {
+    const midStr = String(mid);
+    const task = activePeriodicTasks.get(midStr);
+    if (!task) return;
+    if (task.tickId) clearInterval(task.tickId);
+    task.status = 'stopped';
+    task.stopReason = reason;
+    task.notifyAll();
+    activePeriodicTasks.delete(midStr);
+  }
+
+  function startPeriodicTask(taskConfig) {
+    const midStr = String(taskConfig.mid);
+    if (activePeriodicTasks.has(midStr)) {
+      stopPeriodicTask(midStr, '重新配置启动');
+    }
+
+    const intervalSec = Math.max(1, parseInt(taskConfig.intervalSec) || 5);
+    const countPerSend = Math.max(1, parseInt(taskConfig.countPerSend) || 1);
+
+    const task = {
+      mid: midStr,
+      uname: taskConfig.uname || midStr,
+      giftId: String(taskConfig.giftId),
+      giftName: taskConfig.giftName,
+      isBag: !!taskConfig.isBag,
+      bagId: taskConfig.bagId ? String(taskConfig.bagId) : '',
+      batteryCost: Number(taskConfig.batteryCost) || 0,
+      price: Number(taskConfig.price) || 0,
+      intervalSec,
+      countPerSend,
+      totalSentCount: 0,
+      totalTimes: 0,
+      nextSecondsLeft: intervalSec,
+      status: 'running',
+      stopReason: '',
+      tickId: null,
+      listeners: new Set(),
+      notifyAll() {
+        this.listeners.forEach(fn => {
+          try { fn(this); } catch (_) {}
+        });
+      }
+    };
+
+    activePeriodicTasks.set(midStr, task);
+
+    // 立即执行第 1 次发送
+    executePeriodicStep(task);
+
+    // 启动 1 秒级计时器驱动倒计时
+    task.tickId = setInterval(() => {
+      if (task.status !== 'running') {
+        clearInterval(task.tickId);
+        return;
+      }
+      task.nextSecondsLeft--;
+      if (task.nextSecondsLeft <= 0) {
+        task.nextSecondsLeft = task.intervalSec;
+        executePeriodicStep(task);
+      }
+      task.notifyAll();
+    }, 1000);
+
+    task.notifyAll();
+    return task;
+  }
+
+  async function executePeriodicStep(task) {
+    const pageCtx = getPageContext();
+    if (!pageCtx.isLive || !pageCtx.liveShortId) {
+      stopPeriodicTask(task.mid, '未在直播间');
+      showToast('⚠️ 未检测到直播间房间号，循环送礼已自动停止');
+      return;
+    }
+
+    const acc = latestAccountsList.find(a => String(a.mid) === String(task.mid));
+    if (!acc) {
+      stopPeriodicTask(task.mid, '未找到指定账号');
+      return;
+    }
+
+    if (task.isBag) {
+      const bagItem = Array.isArray(acc.bagItems)
+        ? acc.bagItems.find(b => (String(b.gift_id || b.giftId) === String(task.giftId)) || (task.bagId && String(b.bag_id || b.bagId) === String(task.bagId)))
+        : null;
+
+      if (!bagItem || bagItem.gift_num <= 0) {
+        stopPeriodicTask(task.mid, '背包道具已用完');
+        showToast(`⚠️ 【${acc.uname || acc.mid}】背包中【${task.giftName}】已用尽，循环送礼已自动停止`);
+        return;
+      }
+
+      const sendNum = Math.min(task.countPerSend, bagItem.gift_num);
+      try {
+        const res = await chrome.runtime.sendMessage({
+          action: 'SEND_SINGLE_BAG_GIFT',
+          mid: acc.mid,
+          roomId: pageCtx.liveShortId,
+          bagId: bagItem.bag_id || bagItem.bagId || task.bagId,
+          giftId: task.giftId,
+          giftNum: sendNum
+        });
+
+        if (res && res.success) {
+          task.totalTimes++;
+          task.totalSentCount += sendNum;
+          bagItem.gift_num = Math.max(0, bagItem.gift_num - sendNum);
+          if (acc.bagCount !== undefined) {
+            acc.bagCount = Math.max(0, acc.bagCount - sendNum);
+          }
+          if (typeof acc._updateBadges === 'function') acc._updateBadges();
+          task.notifyAll();
+
+          if (bagItem.gift_num <= 0) {
+            stopPeriodicTask(task.mid, '背包道具已送完');
+            showToast(`✔【${acc.uname || acc.mid}】背包中【${task.giftName}】已全部送完 (共送出 ${task.totalSentCount} 个)`);
+          }
+        } else {
+          const msg = res?.message || '赠送失败';
+          stopPeriodicTask(task.mid, msg);
+          showToast(`⚠️ 循环送礼失败: ${msg}`);
+        }
+      } catch (err) {
+        stopPeriodicTask(task.mid, err.message);
+        showToast(`⚠️ 循环送礼异常: ${err.message}`);
+      }
+    } else {
+      const totalBatteryNeeded = task.batteryCost * task.countPerSend;
+      if ((acc.battery ?? 0) < totalBatteryNeeded) {
+        stopPeriodicTask(task.mid, '电池不足');
+        showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需 ${totalBatteryNeeded}，余 ${acc.battery}），循环送礼已自动停止`);
+        return;
+      }
+
+      try {
+        const res = await chrome.runtime.sendMessage({
+          action: 'SEND_GOLD_GIFT',
+          mid: acc.mid,
+          roomId: pageCtx.liveShortId,
+          giftId: task.giftId,
+          price: task.price,
+          giftNum: task.countPerSend
+        });
+
+        if (res && res.success) {
+          task.totalTimes++;
+          task.totalSentCount += task.countPerSend;
+          acc.battery = Math.max(0, (acc.battery ?? 0) - totalBatteryNeeded);
+          if (typeof acc._updateBadges === 'function') acc._updateBadges();
+          task.notifyAll();
+        } else {
+          const errMsg = res?.message || '送礼失败';
+          stopPeriodicTask(task.mid, errMsg);
+          showToast(`⚠️ 循环送礼失败: ${errMsg}`);
+        }
+      } catch (err) {
+        stopPeriodicTask(task.mid, err.message);
+        showToast(`⚠️ 循环送礼异常: ${err.message}`);
+      }
+    }
+  }
+
+  function createPeriodicGiftBox(acc, drawerType) {
+    const box = document.createElement('div');
+    box.className = 'periodic-gift-box';
+
+    let currentSelected = null;
+
+    box.innerHTML = `
+      <div class="periodic-header">
+        <span class="periodic-title">⏱️ 定时循环送礼</span>
+        <span class="periodic-target-badge" title="点击下方礼物列表选择要循环赠送的目标">未选择礼物</span>
+      </div>
+      <div class="periodic-inputs-row">
+        <div class="periodic-inputs-wrap">
+          <span>每</span>
+          <input type="number" class="periodic-input input-interval-m" value="5" min="1" max="999" title="发送间隔(秒)" />
+          <span>秒送</span>
+          <input type="number" class="periodic-input input-count-n" value="1" min="1" max="9999" title="每次赠送数量" />
+          <span>个</span>
+        </div>
+        <button class="btn-periodic-toggle" title="开始/停止循环送礼">▶ 开始</button>
+      </div>
+      <div class="periodic-status-bar is-stopped" style="display: none;">
+        <span class="status-text">未开始</span>
+      </div>
+    `;
+
+    const targetBadge = box.querySelector('.periodic-target-badge');
+    const inputM = box.querySelector('.input-interval-m');
+    const inputN = box.querySelector('.input-count-n');
+    const btnToggle = box.querySelector('.btn-periodic-toggle');
+    const statusBar = box.querySelector('.periodic-status-bar');
+    const statusText = box.querySelector('.status-text');
+
+    function syncUI(task) {
+      if (task && task.status === 'running') {
+        btnToggle.textContent = '⏹ 停止';
+        btnToggle.classList.add('is-running');
+        btnToggle.disabled = false;
+        inputM.disabled = true;
+        inputN.disabled = true;
+
+        statusBar.style.display = 'flex';
+        statusBar.className = 'periodic-status-bar';
+        statusText.textContent = `🟢 运行中: 已送 ${task.totalTimes}次 (共 ${task.totalSentCount}个) | 下次: ${task.nextSecondsLeft}秒后`;
+        targetBadge.textContent = `🎁 ${task.giftName}`;
+        targetBadge.style.color = '#fa8c16';
+        targetBadge.style.fontWeight = 'bold';
+      } else {
+        btnToggle.textContent = '▶ 开始';
+        btnToggle.classList.remove('is-running');
+        inputM.disabled = false;
+        inputN.disabled = false;
+
+        if (task && task.stopReason) {
+          statusBar.style.display = 'flex';
+          statusBar.className = 'periodic-status-bar is-error';
+          statusText.textContent = `⚠️ 已停止: ${task.stopReason} (累计送出 ${task.totalSentCount}个)`;
+        } else if (task && task.status === 'stopped') {
+          statusBar.style.display = 'flex';
+          statusBar.className = 'periodic-status-bar is-stopped';
+          statusText.textContent = `⚪ 已停止 (累计送出 ${task.totalSentCount || 0}个)`;
+        } else {
+          statusBar.style.display = 'none';
+        }
+
+        if (currentSelected) {
+          targetBadge.textContent = `🎁 ${currentSelected.name}`;
+          targetBadge.style.color = '#873800';
+          targetBadge.style.fontWeight = '500';
+        } else {
+          targetBadge.textContent = '未选择礼物 (点击下方选择)';
+          targetBadge.style.color = '#873800';
+          targetBadge.style.fontWeight = 'normal';
+        }
+      }
+    }
+
+    const midStr = String(acc.mid);
+    const existingTask = activePeriodicTasks.get(midStr);
+    if (existingTask) {
+      existingTask.listeners.add(syncUI);
+      syncUI(existingTask);
+    } else {
+      syncUI(null);
+    }
+
+    btnToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const currentTask = activePeriodicTasks.get(midStr);
+      if (currentTask && currentTask.status === 'running') {
+        stopPeriodicTask(midStr, '手动停止');
+        showToast(`⏹ 【${acc.uname || acc.mid}】循环送礼已停止 (共送出 ${currentTask.totalSentCount} 个)`);
+        return;
+      }
+
+      if (!currentSelected) {
+        showToast('⚠️ 请先在下方列表中点击选择一个要循环赠送的礼物');
+        return;
+      }
+
+      const m = Math.max(1, parseInt(inputM.value) || 5);
+      const n = Math.max(1, parseInt(inputN.value) || 1);
+      inputM.value = m;
+      inputN.value = n;
+
+      const newTask = startPeriodicTask({
+        mid: acc.mid,
+        uname: acc.uname,
+        giftId: currentSelected.id,
+        giftName: currentSelected.name,
+        isBag: currentSelected.isBag,
+        bagId: currentSelected.bagId,
+        batteryCost: currentSelected.battery,
+        price: currentSelected.price,
+        intervalSec: m,
+        countPerSend: n
+      });
+
+      newTask.listeners.add(syncUI);
+      syncUI(newTask);
+      showToast(`▶ 【${acc.uname || acc.mid}】开始循环送礼: 每 ${m} 秒送 ${n} 个【${currentSelected.name}】`);
+    });
+
+    return {
+      element: box,
+      setSelectedGift(gift) {
+        currentSelected = gift;
+        const currentTask = activePeriodicTasks.get(midStr);
+        if (!currentTask || currentTask.status !== 'running') {
+          targetBadge.textContent = `🎁 ${gift.name} (${gift.isBag ? '🎒包裹' : `🔋${gift.battery}`})`;
+          targetBadge.style.color = '#d46b08';
+          targetBadge.style.fontWeight = 'bold';
+        }
+      },
+      syncUI
+    };
+  }
 
   let isFetchingLiveAssets = false;
 
@@ -1030,6 +1755,7 @@
         return;
       }
 
+      latestAccountsList = res.accounts;
       liveAccountsList.innerHTML = '';
       res.accounts.forEach(acc => {
         const card = document.createElement('div');
@@ -1074,18 +1800,32 @@
           </div>
         `;
 
-        // 背包抽屉容器
+        // 统一更新主卡片上的资产徽章
+        acc._updateBadges = () => {
+          const batNum = mainRow.querySelector('.battery-num');
+          if (batNum) batNum.textContent = acc.battery ?? 0;
+          const bagNum = mainRow.querySelector('.bag-count-num');
+          if (bagNum) bagNum.textContent = acc.bagCount ?? 0;
+        };
+
+        // 背包抽屉容器与定时循环控制台
         const drawer = document.createElement('div');
         drawer.className = 'bag-drawer';
+        const bagPeriodicBox = createPeriodicGiftBox(acc, 'bag');
 
         // 渲染背包道具列表
         function renderDrawerItems() {
+          drawer.innerHTML = '';
+          drawer.appendChild(bagPeriodicBox.element);
+
           if (bagItems.length === 0) {
-            drawer.innerHTML = '<div class="bag-empty-tip">背包暂无可用道具</div>';
+            const emptyTip = document.createElement('div');
+            emptyTip.className = 'bag-empty-tip';
+            emptyTip.textContent = '背包暂无可用道具';
+            drawer.appendChild(emptyTip);
             return;
           }
 
-          drawer.innerHTML = '';
           bagItems.forEach((item, itemIdx) => {
             const itemRow = document.createElement('div');
             itemRow.className = 'bag-item-row';
@@ -1111,8 +1851,26 @@
               <div class="bag-item-actions">
                 <button class="btn-send-gift-mini btn-send-one" title="送出 1 个给当前主播">送1个</button>
                 ${item.gift_num > 1 ? '<button class="btn-send-gift-all btn-send-all" title="全部送出给当前主播">全送</button>' : ''}
+                <button class="btn-send-gift-mini btn-send-loop" style="background:#fa8c16;" title="设为定时循环送礼目标">循环</button>
               </div>
             `;
+
+            // 点击设为定时循环送礼目标
+            const btnLoop = itemRow.querySelector('.btn-send-loop');
+            if (btnLoop) {
+              btnLoop.addEventListener('click', (e) => {
+                e.stopPropagation();
+                bagPeriodicBox.setSelectedGift({
+                  id: item.gift_id,
+                  name: item.gift_name,
+                  isBag: true,
+                  bagId: item.bag_id,
+                  battery: 0,
+                  price: 0
+                });
+                showToast(`✔ 已选中背包【${item.gift_name}】，可在上方设置【每M秒送N个】并点击开始`);
+              });
+            }
 
             // 处理送礼
             async function handleSend(sendCount, targetBtn) {
@@ -1143,8 +1901,7 @@
                   acc.bagCount = Math.max(0, (acc.bagCount || 0) - sendCount);
                   
                   // 更新主卡片上的背包数量徽章
-                  const badgeNum = mainRow.querySelector('.bag-count-num');
-                  if (badgeNum) badgeNum.textContent = acc.bagCount;
+                  acc._updateBadges();
 
                   if (item.gift_num <= 0) {
                     bagItems.splice(itemIdx, 1);
@@ -1273,6 +2030,9 @@
               const unsupportedGifts = allGifts.filter(g => g.category === 'unsupported');
               const sortedAllGifts = [...batteryGifts, ...bagGifts, ...unsupportedGifts];
 
+              // 0. 创建定时循环送礼控制台
+              const periodicBox = createPeriodicGiftBox(acc, 'gift');
+
               // 1. 创建 Tab 栏
               const tabsRow = document.createElement('div');
               tabsRow.className = 'gift-drawer-tabs';
@@ -1305,10 +2065,11 @@
                 targetList.forEach(gift => {
                   const row = document.createElement('div');
                   row.className = 'gift-item-row';
+                  row.dataset.giftId = String(gift.id);
 
                   // 匹配当前账号背包中是否有此道具
                   const myBagItem = Array.isArray(acc.bagItems)
-                    ? acc.bagItems.find(b => String(b.giftId) === String(gift.id))
+                    ? acc.bagItems.find(b => String(b.giftId || b.gift_id) === String(gift.id))
                     : null;
 
                   let badgeHtml = '';
@@ -1321,7 +2082,7 @@
                   } else if (gift.isBagOnly) {
                     if (myBagItem && myBagItem.giftNum > 0) {
                       badgeHtml = `<span class="gift-item-badge badge-bag-has">🎒x${myBagItem.giftNum}</span>`;
-                      row.title = `【包裹专属】背包剩余 ${myBagItem.giftNum} 个，点击直接送出 1 个`;
+                      row.title = `【包裹专属】背包剩余 ${myBagItem.giftNum} 个，点击可选中循环或直接送出`;
                     } else {
                       rowExtraClass = 'is-bag-empty';
                       badgeHtml = `<span class="gift-item-badge badge-bag-empty">🎒无库存</span>`;
@@ -1329,7 +2090,7 @@
                     }
                   } else {
                     badgeHtml = `<span class="gift-item-badge badge-battery">🔋${gift.battery}</span>`;
-                    row.title = `【电池礼物】点击送出 1 个【${gift.name}】（消耗 ${gift.battery} 电池）`;
+                    row.title = `【电池礼物】消耗 ${gift.battery} 电池，点击可选中循环或直接送出`;
                   }
 
                   if (rowExtraClass) row.classList.add(rowExtraClass);
@@ -1338,134 +2099,171 @@
                     ${gift.img ? `<img class="gift-item-img" src="${gift.img}" onerror="this.style.display='none'" />` : '<span style="width:20px;flex-shrink:0;"></span>'}
                     <span class="gift-item-name">${gift.name}</span>
                     ${badgeHtml}
+                    <div class="gift-item-btns">
+                      <button class="btn-gift-mini-action btn-gift-send-one" title="立即送出 1 个给当前主播">送1</button>
+                      <button class="btn-gift-mini-action btn-gift-select-loop" title="设为定时循环送礼目标">循环</button>
+                    </div>
                   `;
 
-                  row.addEventListener('click', async (e) => {
+                  // 选中该礼物作为循环送礼目标
+                  function selectGiftForLoop() {
+                    listScroll.querySelectorAll('.gift-item-row').forEach(r => r.classList.remove('is-selected-target'));
+                    row.classList.add('is-selected-target');
+                    periodicBox.setSelectedGift({
+                      id: gift.id,
+                      name: gift.name,
+                      isBag: !!gift.isBagOnly,
+                      bagId: myBagItem ? (myBagItem.bagId || myBagItem.bag_id) : '',
+                      battery: Number(gift.battery) || 0,
+                      price: Number(gift.price) || 0
+                    });
+                    showToast(`✔ 已选中【${gift.name}】，可在上方设置【每M秒送N个】并点击开始`);
+                  }
+
+                  // 点击整行或点击循环按钮选中目标
+                  row.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    if (row.classList.contains('sending')) return;
+                    selectGiftForLoop();
+                  });
 
-                    // 1. 若为不支持礼物，友好提示
-                    if (gift.isUnsupported) {
-                      showToast(`⚠️ 【${gift.name}】在当前直播间不支持赠送 (${gift.unsupportedReason || '限定礼物'})`);
-                      return;
-                    }
+                  const btnSelectLoop = row.querySelector('.btn-gift-select-loop');
+                  if (btnSelectLoop) {
+                    btnSelectLoop.addEventListener('click', (e) => {
+                      e.stopPropagation();
+                      selectGiftForLoop();
+                    });
+                  }
 
-                    // 2. 若为包裹专属礼物
-                    if (gift.isBagOnly) {
-                      if (!myBagItem || myBagItem.giftNum <= 0) {
-                        showToast(`⚠️ 【${gift.name}】只能从包裹送出，当前账号背包中无库存`);
+                  // 点击【送1】按钮单次立即赠送
+                  const btnSendOne = row.querySelector('.btn-gift-send-one');
+                  if (btnSendOne) {
+                    btnSendOne.addEventListener('click', async (e) => {
+                      e.stopPropagation();
+                      if (btnSendOne.disabled || row.classList.contains('sending')) return;
+
+                      // 1. 若为不支持礼物，友好提示
+                      if (gift.isUnsupported) {
+                        showToast(`⚠️ 【${gift.name}】在当前直播间不支持赠送 (${gift.unsupportedReason || '限定礼物'})`);
                         return;
                       }
 
-                      // 背包中有道具，直接走送背包道具接口
+                      // 2. 若为包裹专属礼物
+                      if (gift.isBagOnly) {
+                        if (!myBagItem || myBagItem.giftNum <= 0) {
+                          showToast(`⚠️ 【${gift.name}】只能从包裹送出，当前账号背包中无库存`);
+                          return;
+                        }
+
+                        row.classList.add('sending');
+                        btnSendOne.disabled = true;
+                        try {
+                          const sendBagRes = await chrome.runtime.sendMessage({
+                            action: 'SEND_SINGLE_BAG_GIFT',
+                            mid: acc.mid,
+                            roomId: pageCtx.liveShortId,
+                            bagId: myBagItem.bagId || myBagItem.bag_id,
+                            giftId: gift.id,
+                            giftNum: 1
+                          });
+
+                          if (sendBagRes && sendBagRes.success) {
+                            myBagItem.giftNum = Math.max(0, myBagItem.giftNum - 1);
+                            if (acc.bagCount !== undefined && acc.bagCount > 0) {
+                              acc.bagCount = Math.max(0, acc.bagCount - 1);
+                              acc._updateBadges();
+                            }
+                            showToast(`✔【${acc.uname || acc.mid}】已送出包裹【${gift.name}】x1`);
+                            renderTabGifts(currentTab);
+                          } else {
+                            showToast(sendBagRes?.message || '赠送失败');
+                          }
+                        } catch (err) {
+                          showToast(`赠送异常: ${err.message}`);
+                        } finally {
+                          row.classList.remove('sending');
+                          btnSendOne.disabled = false;
+                        }
+                        return;
+                      }
+
+                      // 3. 正常电池礼物扣除赠送
+                      if (acc.battery < gift.battery) {
+                        showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需${gift.battery}，余${acc.battery}）`);
+                        return;
+                      }
+
                       row.classList.add('sending');
+                      btnSendOne.disabled = true;
                       try {
-                        const sendBagRes = await chrome.runtime.sendMessage({
-                          action: 'SEND_SINGLE_BAG_GIFT',
+                        const sendRes = await chrome.runtime.sendMessage({
+                          action: 'SEND_GOLD_GIFT',
                           mid: acc.mid,
                           roomId: pageCtx.liveShortId,
-                          bagId: myBagItem.bagId,
                           giftId: gift.id,
+                          price: gift.price,
                           giftNum: 1
                         });
-
-                        if (sendBagRes && sendBagRes.success) {
-                          myBagItem.giftNum = Math.max(0, myBagItem.giftNum - 1);
-                          if (acc.bagCount !== undefined && acc.bagCount > 0) {
-                            acc.bagCount = Math.max(0, acc.bagCount - 1);
-                            const bagNum = mainRow.querySelector('.bag-count-num');
-                            if (bagNum) bagNum.textContent = acc.bagCount;
-                          }
-                          showToast(`✔【${acc.uname || acc.mid}】已送出包裹【${gift.name}】x1`);
-                          renderTabGifts(currentTab);
+                        if (sendRes && sendRes.success) {
+                          acc.battery = Math.max(0, (acc.battery ?? 0) - gift.battery);
+                          acc._updateBadges();
+                          batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
+                          showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
                         } else {
-                          showToast(sendBagRes?.message || '赠送失败');
+                          const errMsg = sendRes?.message || '送礼失败';
+
+                          // 1. 遇到 200010 (仅限背包赠送)
+                          if (errMsg.includes('200010')) {
+                            gift.isBagOnly = true;
+                            gift.category = 'bag';
+                            if (myBagItem && myBagItem.giftNum > 0) {
+                              showToast(`⚠️ 【${gift.name}】仅限背包赠送，正尝试消耗背包道具...`);
+                              try {
+                                const sendBagRes = await chrome.runtime.sendMessage({
+                                  action: 'SEND_SINGLE_BAG_GIFT',
+                                  mid: acc.mid,
+                                  roomId: pageCtx.liveShortId,
+                                  bagId: myBagItem.bagId || myBagItem.bag_id,
+                                  giftId: gift.id,
+                                  giftNum: 1
+                                });
+                                if (sendBagRes && sendBagRes.success) {
+                                  myBagItem.giftNum = Math.max(0, myBagItem.giftNum - 1);
+                                  if (acc.bagCount !== undefined && acc.bagCount > 0) {
+                                    acc.bagCount = Math.max(0, acc.bagCount - 1);
+                                    acc._updateBadges();
+                                  }
+                                  showToast(`✔【${acc.uname || acc.mid}】已从背包送出【${gift.name}】x1`);
+                                } else {
+                                  showToast(sendBagRes?.message || '背包赠送失败');
+                                }
+                              } catch (_) {}
+                            } else {
+                              showToast(`⚠️ 【${gift.name}】仅限背包赠送 (代码 200010)，当前背包无库存`);
+                            }
+                            renderTabGifts(currentTab);
+                            return;
+                          }
+
+                          // 2. 遇到 200036 (该道具不能在这个房间投喂)
+                          if (errMsg.includes('200036')) {
+                            gift.isUnsupported = true;
+                            gift.category = 'unsupported';
+                            gift.unsupportedReason = '非本房间道具';
+                            showToast(`⚠️ 【${gift.name}】不能在这个房间投喂 (代码 200036)`);
+                            renderTabGifts(currentTab);
+                            return;
+                          }
+
+                          showToast(errMsg);
                         }
                       } catch (err) {
-                        showToast(`赠送异常: ${err.message}`);
+                        showToast(`送礼异常: ${err.message}`);
                       } finally {
                         row.classList.remove('sending');
+                        btnSendOne.disabled = false;
                       }
-                      return;
-                    }
-
-                    // 3. 正常电池礼物扣除赠送
-                    if (acc.battery < gift.battery) {
-                      showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需${gift.battery}，余${acc.battery}）`);
-                      return;
-                    }
-
-                    row.classList.add('sending');
-                    try {
-                      const sendRes = await chrome.runtime.sendMessage({
-                        action: 'SEND_GOLD_GIFT',
-                        mid: acc.mid,
-                        roomId: pageCtx.liveShortId,
-                        giftId: gift.id,
-                        price: gift.price,
-                        giftNum: 1
-                      });
-                      if (sendRes && sendRes.success) {
-                        acc.battery = Math.max(0, (acc.battery ?? 0) - gift.battery);
-                        const batNum = mainRow.querySelector('.battery-num');
-                        if (batNum) batNum.textContent = acc.battery;
-                        batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
-                        showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
-                      } else {
-                        const errMsg = sendRes?.message || '送礼失败';
-
-                        // 1. 遇到 200010 (仅限背包赠送)
-                        if (errMsg.includes('200010')) {
-                          gift.isBagOnly = true;
-                          gift.category = 'bag';
-                          if (myBagItem && myBagItem.giftNum > 0) {
-                            showToast(`⚠️ 【${gift.name}】仅限背包赠送，正尝试消耗背包道具...`);
-                            try {
-                              const sendBagRes = await chrome.runtime.sendMessage({
-                                action: 'SEND_SINGLE_BAG_GIFT',
-                                mid: acc.mid,
-                                roomId: pageCtx.liveShortId,
-                                bagId: myBagItem.bagId,
-                                giftId: gift.id,
-                                giftNum: 1
-                              });
-                              if (sendBagRes && sendBagRes.success) {
-                                myBagItem.giftNum = Math.max(0, myBagItem.giftNum - 1);
-                                if (acc.bagCount !== undefined && acc.bagCount > 0) {
-                                  acc.bagCount = Math.max(0, acc.bagCount - 1);
-                                  const bagNum = mainRow.querySelector('.bag-count-num');
-                                  if (bagNum) bagNum.textContent = acc.bagCount;
-                                }
-                                showToast(`✔【${acc.uname || acc.mid}】已从背包送出【${gift.name}】x1`);
-                              } else {
-                                showToast(sendBagRes?.message || '背包赠送失败');
-                              }
-                            } catch (_) {}
-                          } else {
-                            showToast(`⚠️ 【${gift.name}】仅限背包赠送 (代码 200010)，当前背包无库存`);
-                          }
-                          renderTabGifts(currentTab);
-                          return;
-                        }
-
-                        // 2. 遇到 200036 (该道具不能在这个房间投喂)
-                        if (errMsg.includes('200036')) {
-                          gift.isUnsupported = true;
-                          gift.category = 'unsupported';
-                          gift.unsupportedReason = '非本房间道具';
-                          showToast(`⚠️ 【${gift.name}】不能在这个房间投喂 (代码 200036)`);
-                          renderTabGifts(currentTab);
-                          return;
-                        }
-
-                        showToast(errMsg);
-                      }
-                    } catch (err) {
-                      showToast(`送礼异常: ${err.message}`);
-                    } finally {
-                      row.classList.remove('sending');
-                    }
-                  });
+                    });
+                  }
 
                   listScroll.appendChild(row);
                 });
@@ -1521,6 +2319,7 @@
                 });
               });
 
+              giftDrawer.appendChild(periodicBox.element);
               giftDrawer.appendChild(tabsRow);
               giftDrawer.appendChild(listScroll);
 

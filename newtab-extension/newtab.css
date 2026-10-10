@@ -166,7 +166,10 @@ html, body {
   padding: 8px 8px 8px 12px;
   gap: 8px;
   transition: border-color var(--transition), box-shadow var(--transition);
+  /* 整框任意空白处都可点击聚焦输入框 */
+  cursor: text;
 }
+.search-container button { cursor: pointer; }
 .search-container:focus-within {
   border-color: rgba(124,111,239,0.6);
   box-shadow: 0 0 0 3px rgba(124,111,239,0.2), var(--glass-shadow);
@@ -216,6 +219,9 @@ html, body {
   font-weight: 300;
   caret-color: var(--accent);
   min-width: 0;
+  /* 撑满容器高度，让上下留白也能点中输入 */
+  align-self: stretch;
+  padding: 9px 0;
 }
 .search-input::placeholder { color: rgba(255,255,255,0.4); }
 
@@ -233,7 +239,117 @@ html, body {
 .search-submit svg { width: 16px; height: 16px; }
 .search-submit:hover { opacity: 0.9; transform: scale(1.05); }
 
-/* 引擎选择浮层 */
+/* ── 搜索历史浮层 ── */
+.search-history {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 90;
+  border-radius: var(--radius-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  animation: scale-in 0.18s ease;
+}
+/* hidden 属性默认 display:none，会被上面的 flex 覆盖，必须显式声明 */
+.search-history[hidden] { display: none; }
+
+.sh-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+.sh-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+}
+.sh-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: all var(--transition);
+}
+.sh-clear:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.14);
+}
+
+.sh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: 264px;
+}
+
+.sh-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  color: rgba(255,255,255,0.82);
+  font-size: 14px;
+  font-weight: 300;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+/* 鼠标悬停与 ↑↓ 键盘选中共用高亮样式 */
+.sh-item:hover,
+.sh-item.active {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+.sh-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+.sh-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh-del {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255,255,255,0.45);
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  transition: all var(--transition);
+}
+.sh-item:hover .sh-del { opacity: 1; }
+.sh-del:hover {
+  background: rgba(255,77,109,0.28);
+  color: #fff;
+}
+
+.sh-empty {
+  list-style: none;
+  padding: 18px 10px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── 引擎选择浮层 ── */
 .engine-picker {
   position: absolute;
   top: calc(100% + 12px);

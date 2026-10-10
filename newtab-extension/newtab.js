@@ -168,6 +168,7 @@ applyEngine(currentEngine);
 // 点击引擎按钮：切换显示/隐藏，阻止事件继续冒泡
 engineBtn.addEventListener('click', (ev) => {
   ev.stopPropagation();
+  closeHistory();          // 避免两个浮层同时展开叠在一起
   enginePicker.classList.toggle('open');
 });
 
@@ -193,8 +194,12 @@ document.addEventListener('click', (ev) => {
   }
 });
 
-function doSearch() {
-  const q = searchInput.value.trim();
+/**
+ * 执行搜索
+ * @param {string} [rawQuery] 指定搜索词；不传则取输入框当前内容
+ */
+function doSearch(rawQuery) {
+  const q = (rawQuery || searchInput.value).trim();
   if (!q) return;
   // 判断是否是 URL
   const isUrl = /^(https?:\/\/|www\.)/i.test(q) || /^[\w-]+\.\w{2,}/.test(q);
@@ -202,13 +207,186 @@ function doSearch() {
     ? (/^https?:\/\//i.test(q) ? q : 'https://' + q)
     : ENGINES[currentEngine].url + encodeURIComponent(q);
 
+  // 先落历史再跳转：清空输入框，但历史保留
+  addToHistory(q);
+  searchInput.value = '';
+  closeHistory();
+
   // 默认在新标签页打开
   window.open(targetUrl, '_blank');
 }
 
-searchSubmit.addEventListener('click', doSearch);
+searchSubmit.addEventListener('click', () => doSearch());
+
+
+/* ════════════════════════════════
+   3-A. 搜索历史
+════════════════════════════════ */
+const HISTORY_KEY = 'lumina-search-history';
+const HISTORY_MAX = 12;
+
+const searchContainer = document.querySelector('.search-container');
+const historyPanel    = document.getElementById('search-history');
+const historyList     = document.getElementById('sh-list');
+const historyClear    = document.getElementById('sh-clear');
+
+let historyItems = [];
+let historyIndex = -1;   // -1 表示当前没有选中项
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    return list.filter(x => typeof x === 'string' && x.trim());
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(list) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  } catch {
+    // 隐私模式等场景下 localStorage 可能不可用，静默降级为仅本次会话有效
+  }
+}
+
+/** 记录一条搜索历史：去重后置顶，最多保留 HISTORY_MAX 条 */
+function addToHistory(query) {
+  const term = String(query).trim();
+  if (!term) return;
+  const next = [term, ...loadHistory().filter(x => x !== term)].slice(0, HISTORY_MAX);
+  saveHistory(next);
+  renderHistory();
+}
+
+function removeFromHistory(term) {
+  const next = loadHistory().filter(x => x !== term);
+  saveHistory(next);
+  renderHistory();
+  // 删空后不残留空面板，与 openHistory「无历史不展示」的约定保持一致
+  if (!next.length) closeHistory();
+}
+
+function clearHistory() {
+  saveHistory([]);
+  renderHistory();
+  closeHistory();
+  showToast('搜索历史已清空', '🧹');
+}
+
+function renderHistory() {
+  historyItems = loadHistory();
+
+  if (!historyItems.length) {
+    historyList.innerHTML = '<li class="sh-empty">暂无搜索历史</li>';
+    return;
+  }
+
+  historyList.innerHTML = historyItems.map((item, i) => `
+    <li class="sh-item" data-index="${i}">
+      <svg class="sh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <span class="sh-text"></span>
+      <button class="sh-del" data-index="${i}" title="删除这条">✕</button>
+    </li>
+  `).join('');
+
+  // 搜索词是用户输入内容，必须走 textContent 填充，不能拼进 HTML
+  historyList.querySelectorAll('.sh-text').forEach((el, i) => {
+    el.textContent = historyItems[i];
+  });
+}
+
+function setActiveIndex(i) {
+  historyIndex = i;
+  historyList.querySelectorAll('.sh-item').forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.index) === historyIndex);
+  });
+  if (historyIndex >= 0) {
+    historyList
+      .querySelector(`.sh-item[data-index="${historyIndex}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function openHistory() {
+  // 输入框有内容时不再遮挡；无历史也不展示空面板
+  if (searchInput.value.trim() || !loadHistory().length) return;
+  renderHistory();
+  historyPanel.hidden = false;
+  setActiveIndex(-1);
+}
+
+function closeHistory() {
+  if (historyPanel) historyPanel.hidden = true;
+  setActiveIndex(-1);
+}
+
+// 整框点击即可聚焦：命中按钮时保留按钮自身行为，其余空白处一律聚焦输入框
+searchContainer.addEventListener('mousedown', (ev) => {
+  if (ev.target.closest('button')) return;
+  ev.preventDefault();          // 先阻止默认失焦，再手动聚焦，一次点击即生效
+  searchInput.focus();
+  openHistory();
+});
+
+// 只在「点击」时展开历史：输入框带 autofocus，用 focus 事件会让面板在页面加载时就弹出
+searchInput.addEventListener('click', openHistory);
+searchInput.addEventListener('input', closeHistory);
+
 searchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') doSearch();
+  const panelOpen = !historyPanel.hidden;
+
+  if (e.key === 'Enter') {
+    // 有高亮项时优先执行高亮项，否则搜索输入框内容
+    doSearch(panelOpen && historyIndex >= 0 ? historyItems[historyIndex] : undefined);
+    return;
+  }
+
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && panelOpen && historyItems.length) {
+    e.preventDefault();
+    const next = e.key === 'ArrowDown'
+      ? historyIndex + 1
+      : historyIndex - 1;
+    // 首尾循环
+    setActiveIndex(next >= historyItems.length ? 0 : next < 0 ? historyItems.length - 1 : next);
+    return;
+  }
+
+  if (e.key === 'Escape' && panelOpen) {
+    e.stopPropagation();        // 避免冒泡触发全局 Escape 关闭弹窗
+    closeHistory();
+  }
+});
+
+// 事件委托：点击条目直接搜索，点击 × 删除单条
+historyList.addEventListener('click', (ev) => {
+  const delBtn = ev.target.closest('.sh-del');
+  if (delBtn) {
+    ev.stopPropagation();
+    removeFromHistory(historyItems[Number(delBtn.dataset.index)]);
+    return;
+  }
+  const item = ev.target.closest('.sh-item');
+  if (item) doSearch(historyItems[Number(item.dataset.index)]);
+});
+
+// 鼠标移动同步键盘高亮位置
+historyList.addEventListener('mousemove', (ev) => {
+  const item = ev.target.closest('.sh-item');
+  setActiveIndex(item ? Number(item.dataset.index) : -1);
+});
+
+historyClear.addEventListener('click', clearHistory);
+
+// 点击搜索区以外的位置收起历史
+document.addEventListener('click', (ev) => {
+  if (historyPanel.hidden) return;
+  if (historyPanel.contains(ev.target) || searchContainer.contains(ev.target)) return;
+  closeHistory();
 });
 
 
@@ -905,6 +1083,7 @@ document.addEventListener('keydown', (e) => {
     closeModal();
     closeSettingsModal();
     hideContextMenu();
+    closeHistory();
   }
 
   // 任意打字直接聚焦搜索框

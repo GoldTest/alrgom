@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilibili 多账号助手 (Bili Multi-Account)",
-  "version": "1.2.0",
+  "version": "1.5.0",
   "description": "B站多账号并行管理插件：支持网页登录自动发现、主账号一键切换、页面悬浮快捷面板、直播间多账号同时发言",
   "permissions": [
     "cookies",
