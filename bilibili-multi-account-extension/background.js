@@ -45,13 +45,18 @@ let cachedDeviceCookies = null;
 async function getDeviceCookies() {
   if (cachedDeviceCookies) return cachedDeviceCookies;
   try {
-    const list = await chrome.cookies.getAll({ domain: '.bilibili.com' });
+    const p1 = chrome.cookies.getAll({ url: 'https://live.bilibili.com' });
+    const p2 = chrome.cookies.getAll({ url: 'https://www.bilibili.com' });
+    const p3 = chrome.cookies.getAll({ domain: '.bilibili.com' });
+    const [c1, c2, c3] = await Promise.all([p1, p2, p3]);
+    const list = [...(c1 || []), ...(c2 || []), ...(c3 || [])];
     const dict = {};
     list.forEach(c => {
-      if (['buvid3', 'buvid4', 'b_nut', '_uuid', 'buvid_fp'].includes(c.name)) {
+      if (['buvid3', 'buvid4', 'b_nut', '_uuid', 'buvid_fp', 'CURRENT_FNVAL'].includes(c.name)) {
         dict[c.name] = c.value;
       }
     });
+    console.log('[送礼历史-设备指纹]', dict);
     if (dict.buvid3) cachedDeviceCookies = dict;
     return dict;
   } catch (_) {
@@ -1003,15 +1008,16 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
   }
 
   // ── 核心接口 1: 官方金瓜子与电池送礼流水账单 (真金白银电池礼物消费明细) ──
+  // 关键：B站服务端的 platform 枚举只认 web/html5/android/ios，不认 pc！必须传 platform=web 以免触发 NullClient
   const clientHeaders = {
-    'Accept': 'application/json',
+    'Accept': 'application/json, text/plain, */*',
     'Referer': 'https://link.bilibili.com/p/center/index',
     'Origin': 'https://link.bilibili.com'
   };
 
   let payProbe = await probeApi(
     '瓜子账单(GET)',
-    `https://api.live.bilibili.com/pay/v1/Exchange/recordList?page=${page}&pageSize=${pageSize}&coin_type=gold&platform=pc&sub_platform=web&mobi_app=web&build=10000&t=${Date.now()}`,
+    `https://api.live.bilibili.com/pay/v1/Exchange/recordList?page=${page}&pageSize=${pageSize}&page_size=${pageSize}&coin_type=gold&platform=web&sub_platform=web&mobi_app=web&build=10000&t=${Date.now()}`,
     { headers: clientHeaders }
   );
   if (!payProbe.ok) {
@@ -1020,7 +1026,7 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
       pageSize: String(pageSize),
       page_size: String(pageSize),
       coin_type: 'gold',
-      platform: 'pc',
+      platform: 'web',
       sub_platform: 'web',
       mobi_app: 'web',
       build: '10000',
@@ -1037,6 +1043,15 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
         },
         body: postBody.toString()
       }
+    );
+  }
+
+  // 备选：探测现代 xlive 钱包消费明细接口 (无 NullClient 限制)
+  if (!payProbe.ok) {
+    payProbe = await probeApi(
+      '钱包明细',
+      `https://api.live.bilibili.com/xlive/revenue/v1/wallet/getWalletDetail?page=${page}&pageSize=${pageSize}&page_size=${pageSize}&platform=web&t=${Date.now()}`,
+      { headers: clientHeaders }
     );
   }
 
@@ -1085,16 +1100,16 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
     });
   }
 
-  // ── 核心接口 2: 当前直播间高能送礼贡献榜 (返回本场直播所有贡献礼物的真实记录) ──
+  // ── 核心接口 2: 当前直播间高能送礼贡献榜 (修复 Rank2018 路由为 topList) ──
   if (realRoomId && anchorUid) {
     let topListProbe = await probeApi(
       '高能榜单',
-      `https://api.live.bilibili.com/rankdb/v1/Rank2018/getTopList?roomid=${realRoomId}&ruid=${anchorUid}`
+      `https://api.live.bilibili.com/rankdb/v1/Rank2018/topList?roomid=${realRoomId}&ruid=${anchorUid}`
     );
     if (!topListProbe.ok) {
       topListProbe = await probeApi(
         '贡献榜单',
-        `https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank?ruid=${anchorUid}&room_id=${realRoomId}&page=1&pageSize=50`
+        `https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank?ruid=${anchorUid}&room_id=${realRoomId}&page=1&pageSize=50&page_size=50`
       );
     }
     if (topListProbe.ok && topListProbe.raw?.data) {
