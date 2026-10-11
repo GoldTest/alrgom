@@ -115,6 +115,7 @@
       right: 20px;
       bottom: 120px;
       width: 295px;
+      max-height: 88vh;
       background: #ffffff;
       border-radius: 14px;
       box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -219,7 +220,7 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      max-height: 440px;
+      max-height: 76vh;
       overflow-y: auto;
     }
 
@@ -1089,216 +1090,6 @@
       background: #fff0d6 !important;
       border-color: #fa8c16 !important;
     }
-
-    /* 历史送礼资产徽章与抽屉样式 */
-    .asset-tag-history {
-      background: #f0f5ff;
-      color: #2f54eb;
-      border: 1px solid #adc6ff;
-    }
-
-    .asset-tag-history:hover {
-      background: #d6e4ff;
-    }
-
-    .history-drawer {
-      display: none;
-      background: #fafafa;
-      border-top: 1px dashed #d9d9d9;
-      padding: 8px 10px;
-      margin-top: 4px;
-      border-radius: 0 0 6px 6px;
-      flex-direction: column;
-      gap: 6px;
-      animation: drawerFade 0.18s ease-out;
-    }
-
-    .history-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 4px;
-    }
-
-    .history-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: #1d39c4;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .history-actions {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .history-stat-tag {
-      font-size: 9px;
-      color: #595959;
-      background: #f0f0f0;
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
-
-    .btn-refresh-history {
-      font-size: 9px;
-      color: #595959;
-      background: #fff;
-      border: 1px solid #d9d9d9;
-      border-radius: 3px;
-      padding: 1px 5px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .btn-refresh-history:hover {
-      color: #2f54eb;
-      border-color: #85a5ff;
-    }
-
-    .history-list-box {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      max-height: 230px;
-      overflow-y: auto;
-      padding-right: 2px;
-    }
-
-    .history-item-card {
-      background: #fff;
-      border: 1px solid #e8e8e8;
-      border-radius: 6px;
-      padding: 6px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      font-size: 10px;
-      transition: box-shadow 0.15s;
-    }
-
-    .history-item-card:hover {
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-      border-color: #d6e4ff;
-    }
-
-    .history-card-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: #8c8c8c;
-      font-size: 9px;
-    }
-
-    .history-source-badge {
-      font-size: 8px;
-      padding: 0 4px;
-      border-radius: 3px;
-      background: #f0f0f0;
-      color: #595959;
-    }
-
-    .history-source-official {
-      background: #f6ffed;
-      color: #389e0d;
-      border: 1px solid #b7eb8f;
-    }
-
-    .history-source-bag {
-      background: #fff7e6;
-      color: #d46b08;
-      border: 1px solid #ffd591;
-    }
-
-    .history-card-main {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 4px;
-    }
-
-    .history-target-wrap {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      flex: 1;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .history-target-name {
-      font-weight: 600;
-      color: #262626;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .history-gift-wrap {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-weight: 600;
-      color: #fb7299;
-      flex-shrink: 0;
-    }
-
-    .history-cost-tag {
-      font-size: 9px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 3px;
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      background: #fff2e8;
-      color: #d4380d;
-      border: 1px solid #ffbb96;
-    }
-
-    .history-cost-free {
-      background: #f5f5f5;
-      color: #8c8c8c;
-      border-color: #d9d9d9;
-    }
-
-    .history-reward-row {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 9px;
-      margin-top: 1px;
-    }
-
-    .history-reward-highlight {
-      background: linear-gradient(90deg, #fffbe6 0%, #fff0f6 100%);
-      color: #cf1322;
-      border: 1px dashed #ffa39e;
-      font-weight: 600;
-      animation: pulseHighlight 2s infinite ease-in-out;
-    }
-
-    .history-reward-normal {
-      background: #fafafa;
-      color: #8c8c8c;
-    }
-
-    @keyframes pulseHighlight {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.85; }
-    }
-
-    .history-empty {
-      text-align: center;
-      color: #8c8c8c;
-      font-size: 10px;
-      padding: 12px 0;
-    }
   `;
 
   shadow.innerHTML = `
@@ -2146,7 +1937,6 @@
           <div class="live-assets-row">
             <span class="live-asset-tag asset-tag-battery" title="点击展开直播间礼物列表">🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▾</span>
             <span class="live-asset-tag asset-tag-bag" title="点击展开/折叠背包道具明细">🎒 <b class="bag-count-num">${bagCount}</b>件 ▾</span>
-            <span class="live-asset-tag asset-tag-history" title="查看该账号历史送礼、消费与爆出记录（方式1官方账单流水）">📜 记录 ▾</span>
           </div>
         `;
 
@@ -2299,12 +2089,11 @@
             const isOpen = drawer.style.display === 'flex';
             drawer.style.display = isOpen ? 'none' : 'flex';
             bagTag.innerHTML = `🎒 <b class="bag-count-num">${acc.bagCount ?? 0}</b>件 ${isOpen ? '▾' : '▴'}`;
-            // 关闭礼物抽屉与历史抽屉
+            // 关闭礼物抽屉
             if (!isOpen) {
               giftDrawer.style.display = 'none';
               const batTag = mainRow.querySelector('.asset-tag-battery');
               if (batTag) batTag.innerHTML = `🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▾`;
-              if (typeof closeHistoryDrawer === 'function') closeHistoryDrawer();
             }
           });
         }
@@ -2314,7 +2103,7 @@
         giftDrawer.className = 'gift-drawer';
         let giftListLoaded = false;
 
-        // 点击电池标签展开/折叠礼物抽屉（同时关闭背包抽屉与历史抽屉）
+        // 点击电池标签展开/折叠礼物抽屉（同时关闭背包抽屉）
         const batteryTag = mainRow.querySelector('.asset-tag-battery');
         if (batteryTag) {
           batteryTag.addEventListener('click', async (e) => {
@@ -2327,10 +2116,9 @@
               return;
             }
 
-            // 关闭背包抽屉与历史抽屉
+            // 关闭背包抽屉
             drawer.style.display = 'none';
             bagTag && (bagTag.innerHTML = `🎒 <b class="bag-count-num">${acc.bagCount ?? 0}</b>件 ▾`);
-            if (typeof closeHistoryDrawer === 'function') closeHistoryDrawer();
 
             // 展开礼物抽屉
             giftDrawer.style.display = 'flex';
@@ -2683,148 +2471,6 @@
           });
         }
 
-        // ── 历史送礼抽屉容器与渲染逻辑 (方式1官方账单流水与本地日志) ──
-        const historyDrawer = document.createElement('div');
-        historyDrawer.className = 'history-drawer';
-        let historyLoaded = false;
-
-        function closeHistoryDrawer() {
-          historyDrawer.style.display = 'none';
-          const hTag = mainRow.querySelector('.asset-tag-history');
-          if (hTag) hTag.innerHTML = `📜 记录 ▾`;
-        }
-
-        async function loadAndRenderHistory() {
-          historyDrawer.innerHTML = '<div class="history-empty">⏳ 正在拉取官方订单与送礼记录...</div>';
-          try {
-            const pageCtx = getPageContext();
-            const res = await chrome.runtime.sendMessage({
-              action: 'GET_GIFT_HISTORY',
-              mid: acc.mid,
-              roomId: pageCtx.isLive ? pageCtx.liveShortId : ''
-            });
-
-            if (!res || !res.success || !Array.isArray(res.list) || res.list.length === 0) {
-              const scannedText = Array.isArray(res?.scanned) && res.scanned.length > 0
-                ? res.scanned.join('<br>')
-                : '已扫描B站服务端各官方账单与盲盒接口';
-              historyDrawer.innerHTML = `
-                <div class="history-header">
-                  <span class="history-title">📜 官方送礼与消费明细</span>
-                  <div class="history-actions">
-                    <button class="btn-refresh-history">🔄 刷新</button>
-                  </div>
-                </div>
-                <div class="history-empty">
-                  <div style="font-weight: 600; color: #595959; margin-bottom: 4px;">📭 B站服务端近30天暂无送礼或爆奖记录</div>
-                  <div style="font-size: 9px; color: #8c8c8c; line-height: 1.5; text-align: left; background: #fff; padding: 6px 8px; border-radius: 4px; border: 1px solid #f0f0f0; margin-top: 4px;">
-                    <div style="color: #2f54eb; font-weight: 600; margin-bottom: 2px;">🔍 服务端各接口探测状态：</div>
-                    ${scannedText}
-                  </div>
-                </div>
-              `;
-              const btnRefresh = historyDrawer.querySelector('.btn-refresh-history');
-              btnRefresh && btnRefresh.addEventListener('click', (e) => {
-                e.stopPropagation();
-                loadAndRenderHistory();
-              });
-              return;
-            }
-
-            const list = res.list;
-            let totalBattery = 0;
-            list.forEach(i => {
-              totalBattery += (i.battery || 0);
-            });
-
-            historyDrawer.innerHTML = `
-              <div class="history-header">
-                <span class="history-title">📜 送礼与消费明细</span>
-                <div class="history-actions">
-                  <span class="history-stat-tag" title="当前显示的记录条数">共${list.length}条</span>
-                  <span class="history-stat-tag" title="累计消耗电池数" style="color:#d4380d;font-weight:600;">🔋${totalBattery}</span>
-                  <button class="btn-refresh-history" title="重新从B站拉取最新明细">🔄 刷新</button>
-                </div>
-              </div>
-              <div class="history-list-box"></div>
-            `;
-
-            const listBox = historyDrawer.querySelector('.history-list-box');
-            list.forEach(item => {
-              const cardItem = document.createElement('div');
-              cardItem.className = 'history-item-card';
-
-              const sourceClass = item.source?.includes('官方') ? 'history-source-official' : 'history-source-bag';
-              const costTag = item.battery > 0
-                ? `<span class="history-cost-tag">🔋 <b>${item.battery}</b> 电池</span>`
-                : (item.gold > 0 ? `<span class="history-cost-tag">🪙 ${item.gold} 瓜子</span>` : `<span class="history-cost-tag history-cost-free">🎒 免费道具</span>`);
-
-              const rewardRow = item.hasReward
-                ? `<div class="history-reward-row history-reward-highlight">✨ 爆出奖励: ${item.reward}</div>`
-                : `<div class="history-reward-row history-reward-normal">普通赠送</div>`;
-
-              cardItem.innerHTML = `
-                <div class="history-card-top">
-                  <span>🕒 ${item.time || '近期'}</span>
-                  <span class="history-source-badge ${sourceClass}">${item.source || '记录'}</span>
-                </div>
-                <div class="history-card-main">
-                  <div class="history-target-wrap" title="赠送给: ${item.targetName}">
-                    <span>👤</span>
-                    <span class="history-target-name">${item.targetName || '主播'}</span>
-                  </div>
-                  <div class="history-gift-wrap" title="${item.giftName}">
-                    <span>🎁 ${item.giftName}</span>
-                    <span style="font-size: 9px; color: #595959;">x${item.giftNum || 1}</span>
-                  </div>
-                  <div>${costTag}</div>
-                </div>
-                ${rewardRow}
-              `;
-              listBox.appendChild(cardItem);
-            });
-
-            const btnRefresh = historyDrawer.querySelector('.btn-refresh-history');
-            btnRefresh && btnRefresh.addEventListener('click', (e) => {
-              e.stopPropagation();
-              loadAndRenderHistory();
-            });
-
-          } catch (err) {
-            historyDrawer.innerHTML = `<div class="history-empty" style="color:#cf1322;">读取记录异常: ${err.message}</div>`;
-          }
-        }
-
-        const historyTag = mainRow.querySelector('.asset-tag-history');
-        if (historyTag) {
-          historyTag.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const isOpen = historyDrawer.style.display === 'flex';
-
-            if (isOpen) {
-              historyDrawer.style.display = 'none';
-              historyTag.innerHTML = `📜 记录 ▾`;
-              return;
-            }
-
-            // 关闭背包抽屉和礼物抽屉
-            drawer.style.display = 'none';
-            bagTag && (bagTag.innerHTML = `🎒 <b class="bag-count-num">${acc.bagCount ?? 0}</b>件 ▾`);
-            giftDrawer.style.display = 'none';
-            const batTag = mainRow.querySelector('.asset-tag-battery');
-            batTag && (batTag.innerHTML = `🔋 <b class="battery-num">${acc.battery ?? 0}</b>电池 ▾`);
-
-            // 展开历史抽屉
-            historyDrawer.style.display = 'flex';
-            historyTag.innerHTML = `📜 记录 ▴`;
-
-            if (!historyLoaded) {
-              historyLoaded = true;
-              loadAndRenderHistory();
-            }
-          });
-        }
-
         // 点击卡片主行执行切号
         mainRow.addEventListener('click', async () => {
           if (!isExtensionValid()) {
@@ -2854,7 +2500,6 @@
         card.appendChild(mainRow);
         card.appendChild(drawer);
         card.appendChild(giftDrawer);
-        card.appendChild(historyDrawer);
         liveAccountsList.appendChild(card);
       });
     } catch (_) {
