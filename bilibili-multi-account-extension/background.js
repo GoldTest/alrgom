@@ -953,6 +953,7 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
     if (!data) return [];
     if (Array.isArray(data)) return data;
     if (Array.isArray(data.list)) return data.list;
+    if (Array.isArray(data.item)) return data.item;
     if (Array.isArray(data.items)) return data.items;
     if (Array.isArray(data.records)) return data.records;
     if (Array.isArray(data.order_list)) return data.order_list;
@@ -1008,11 +1009,13 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
   }
 
   // ── 核心接口 1: 官方金瓜子与电池送礼流水账单 (真金白银电池礼物消费明细) ──
-  // 关键：B站服务端的 platform 枚举只认 web/html5/android/ios，不认 pc！必须传 platform=web 以免触发 NullClient
   const clientHeaders = {
     'Accept': 'application/json, text/plain, */*',
     'Referer': 'https://link.bilibili.com/p/center/index',
-    'Origin': 'https://link.bilibili.com'
+    'Origin': 'https://link.bilibili.com',
+    'X-Bili-Client-Type': 'web',
+    'X-Bili-Device-Type': 'web',
+    'X-Requested-With': 'XMLHttpRequest'
   };
 
   let payProbe = await probeApi(
@@ -1046,11 +1049,11 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
     );
   }
 
-  // 备选：探测现代 xlive 钱包消费明细接口 (无 NullClient 限制)
+  // 备选：探测不带 coin_type 或现代 xlive 钱包消费明细接口
   if (!payProbe.ok) {
     payProbe = await probeApi(
-      '钱包明细',
-      `https://api.live.bilibili.com/xlive/revenue/v1/wallet/getWalletDetail?page=${page}&pageSize=${pageSize}&page_size=${pageSize}&platform=web&t=${Date.now()}`,
+      '瓜子账单(免类型)',
+      `https://api.live.bilibili.com/pay/v1/Exchange/recordList?page=${page}&pageSize=${pageSize}&platform=web&sub_platform=web&mobi_app=web&build=10000&t=${Date.now()}`,
       { headers: clientHeaders }
     );
   }
@@ -1100,28 +1103,49 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
     });
   }
 
-  // ── 核心接口 2: 当前直播间高能送礼贡献榜 (修复 Rank2018 路由为 topList) ──
+  // ── 核心接口 2: 当前直播间贡献榜与个人送礼贡献 ──
   if (realRoomId && anchorUid) {
-    let topListProbe = await probeApi(
-      '高能榜单',
-      `https://api.live.bilibili.com/rankdb/v1/Rank2018/topList?roomid=${realRoomId}&ruid=${anchorUid}`
+    const contribProbe = await probeApi(
+      '贡献榜单',
+      `https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank?ruid=${anchorUid}&room_id=${realRoomId}&page=1&pageSize=50&page_size=50`
     );
-    if (!topListProbe.ok) {
-      topListProbe = await probeApi(
-        '贡献榜单',
-        `https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank?ruid=${anchorUid}&room_id=${realRoomId}&page=1&pageSize=50&page_size=50`
-      );
-    }
-    if (topListProbe.ok && topListProbe.raw?.data) {
-      const topList = extractList(topListProbe.raw.data.list || topListProbe.raw.data);
+    if (contribProbe.ok && contribProbe.raw?.data) {
+      const rankData = contribProbe.raw.data;
+      const topList = extractList(rankData.item || rankData.list || rankData);
+
+      // 1. 深度提取当前用户的真实送礼贡献 (my_rank / own_info / user_rank)
+      const myInfo = rankData.my_rank || rankData.own_info || rankData.user_rank;
+      if (myInfo) {
+        const myScore = Number(myInfo.score || myInfo.gold || myInfo.coin || 0);
+        if (myScore > 0) {
+          const myBattery = Math.floor(myScore / 100);
+          const myRank = myInfo.rank || myInfo.user_rank || '在榜';
+          resultList.push({
+            id: `room_my_rank_${realRoomId}_${account.mid}`,
+            time: '本场直播累计',
+            timestamp: Date.now() + 10000,
+            targetName: `当前主播(房间 ${realRoomId})`,
+            roomId: realRoomId,
+            giftName: '当前房间累计电池送礼',
+            giftNum: 1,
+            battery: myBattery,
+            gold: myScore,
+            reward: `✨ 房间送礼贡献: 第 ${myRank} 名 (共消耗 ${myScore} 瓜子)`,
+            hasReward: true,
+            source: '🏆 房间贡献榜'
+          });
+        }
+      }
+
+      // 2. 在 topList 榜单中查找匹配当前账号
       const myRankItem = topList.find(t => String(t.uid) === String(account.mid));
-      if (myRankItem) {
+      if (myRankItem && (!myInfo || Number(myInfo.score || 0) === 0)) {
         const score = Number(myRankItem.score || myRankItem.gold || 0);
         const rank = myRankItem.rank || myRankItem.user_rank || '在榜';
         const battery = Math.floor(score / 100);
         resultList.push({
           id: `room_rank_${realRoomId}_${account.mid}`,
-          time: '本场直播中',
+          time: '本场直播累计',
           timestamp: Date.now() + 5000,
           targetName: `当前主播(房间 ${realRoomId})`,
           roomId: realRoomId,
@@ -1135,51 +1159,6 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
         });
       }
     }
-  }
-
-  if (payProbe.ok) {
-    payProbe.items.forEach(item => {
-      const title = item.title || item.type_name || item.desc || item.name || '';
-      let targetName = item.uname || item.target_name || item.anchor_name || '';
-      if (!targetName && title) {
-        const m = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
-        if (m) targetName = m[1];
-      }
-
-      let giftName = item.gift_name || '';
-      if (!giftName && title) {
-        const m = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
-        if (m) giftName = m[1];
-        else giftName = title;
-      }
-
-      const rawGold = Number(item.gold || item.coin || item.cost || item.price) || 0;
-      const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
-      const { timeStr, timestamp } = normalizeTimestamp(item.time || item.ctime);
-
-      let reward = item.reward || item.hit_desc || item.ext_desc || '';
-      if (!reward && (item.ext || title)) {
-        const m = `${title} ${item.ext || ''}`.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
-        if (m) reward = m[0];
-      }
-
-      const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
-
-      resultList.push({
-        id: String(item.id || item.order_id || `pay_${timestamp}_${Math.random()}`),
-        time: timeStr,
-        timestamp,
-        targetName: targetName || '当前主播',
-        roomId: item.room_id || 0,
-        giftName: giftName || '直播礼物',
-        giftNum: Number(item.gift_num || item.num) || 1,
-        battery,
-        gold: rawGold || (battery * 100),
-        reward: reward || (hasReward ? reward : '普通赠送'),
-        hasReward,
-        source: '🏛 瓜子账单'
-      });
-    });
   }
 
   // ── 接口 4: 盲盒爆出与开箱中奖流水 (若有房间号则附带 room_id) ──
