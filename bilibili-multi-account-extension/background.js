@@ -141,8 +141,13 @@ async function fetchWithAccount(account, url, options = {}) {
           } catch (_) {}
         }
         if (!data) {
-          const preview = rawText.trim().slice(0, 60);
-          throw new Error(`接口响应非标准JSON(HTTP ${res.status}): ${preview || '空内容'}`);
+          // 若为非 200 响应或非 JSON 页面，返回状态对象以便调用方精准捕获 HTTP 状态码，避免全局报错崩溃
+          return {
+            code: res.status !== 200 ? res.status : -999,
+            message: `HTTP ${res.status}`,
+            isNonJson: true,
+            rawPreview: rawText.trim().slice(0, 60)
+          };
         }
       }
       return data;
@@ -880,7 +885,7 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1, gift
 /**
  * 获取指定账号在 B 站远端服务器记录的真实送礼与消费历史
  * 严格只从 B 站服务端拉取，不依赖任何本地持久化日志
- * 聚合探测：盲盒开箱爆出、金瓜子消费账单、粉丝勋章亲密度明细、直播订单、主站支付流水
+ * 聚合探测：盲盒开箱爆出、金瓜子消费账单、粉丝勋章亲密度明细、直播订单、主站支付流水、当前房间贡献排名
  */
 async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
   const accounts = await Storage.getAccounts();
@@ -922,225 +927,255 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
     return [];
   }
 
-  // ── 接口 1: 盲盒爆出与开箱中奖流水 (核心解决“爆出了什么”) ──
-  try {
-    const boxRes = await fetchWithAccount(
-      account,
-      `https://api.live.bilibili.com/xlive/revenue/v1/box/receiveRecordList?page=${page}&page_size=${pageSize}&t=${Date.now()}`,
-      { headers: { 'Accept': 'application/json' }, timeout: 8000 }
-    );
-    const boxItems = extractList(boxRes?.data);
-    scanned.push(`盲盒爆奖: ${boxRes?.code === 0 ? `成功(${boxItems.length}条)` : `状态${boxRes?.code || '错误'}`}`);
-    if (boxRes && boxRes.code === 0 && boxItems.length > 0) {
-      boxItems.forEach(item => {
-        const { timeStr, timestamp } = normalizeTimestamp(item.ctime || item.time || item.created_at);
-        const reward = item.gift_name || item.reward_name || item.name || '爆出限定产物';
-        const costGold = Number(item.price || item.gold || item.cost) || 0;
-        resultList.push({
-          id: String(item.id || `box_${timestamp}_${Math.random()}`),
-          time: timeStr,
-          timestamp,
-          targetName: item.anchor_name || item.uname || (item.room_id ? `房间 ${item.room_id}` : '当前主播'),
-          roomId: item.room_id || 0,
-          giftName: item.box_name || '盲盒开箱',
-          giftNum: Number(item.num || item.count) || 1,
-          battery: Math.floor(costGold / 100),
-          gold: costGold,
-          reward: `爆出: ${reward}`,
-          hasReward: true,
-          source: '🎁 盲盒爆奖'
-        });
+  // 安全接口探测器：捕获真实响应与状态码，杜绝笼统的“网络异常”
+  async function probeApi(label, url) {
+    try {
+      const res = await fetchWithAccount(account, url, {
+        headers: { 'Accept': 'application/json' },
+        timeout: 8000
       });
+      console.log(`[送礼历史-探针] ${label} 响应:`, res);
+
+      if (res && res.code === 0) {
+        const items = extractList(res.data);
+        scanned.push(`${label}: 成功(${items.length}条)`);
+        return { ok: true, items, raw: res };
+      }
+
+      if (res && res.isNonJson) {
+        scanned.push(`${label}: ${res.message || '非JSON页面'}`);
+        return { ok: false, items: [], raw: res };
+      }
+
+      const code = res?.code !== undefined ? res.code : '无响应';
+      const msg = res?.message || res?.msg || '';
+      scanned.push(`${label}: 状态${code}${msg ? `(${msg})` : ''}`);
+      return { ok: false, items: [], raw: res };
+    } catch (err) {
+      console.warn(`[送礼历史-探针] ${label} 异常:`, err);
+      scanned.push(`${label}: 异常(${err.message || '超时或断开'})`);
+      return { ok: false, items: [] };
     }
-  } catch (err) {
-    scanned.push(`盲盒爆奖: 网络异常`);
+  }
+
+  // ── 接口 1: 盲盒开箱爆奖与中奖明细 (核心解决“爆出了什么”) ──
+  const boxProbe = await probeApi(
+    '盲盒爆奖',
+    `https://api.live.bilibili.com/xlive/revenue/v1/box/receiveRecordList?page=${page}&page_size=${pageSize}&t=${Date.now()}`
+  );
+  if (boxProbe.ok) {
+    boxProbe.items.forEach(item => {
+      const { timeStr, timestamp } = normalizeTimestamp(item.ctime || item.time || item.created_at);
+      const reward = item.gift_name || item.reward_name || item.name || '爆出限定产物';
+      const costGold = Number(item.price || item.gold || item.cost) || 0;
+      resultList.push({
+        id: String(item.id || `box_${timestamp}_${Math.random()}`),
+        time: timeStr,
+        timestamp,
+        targetName: item.anchor_name || item.uname || (item.room_id ? `房间 ${item.room_id}` : '当前主播'),
+        roomId: item.room_id || 0,
+        giftName: item.box_name || '盲盒开箱',
+        giftNum: Number(item.num || item.count) || 1,
+        battery: Math.floor(costGold / 100),
+        gold: costGold,
+        reward: `爆出: ${reward}`,
+        hasReward: true,
+        source: '🎁 盲盒爆奖'
+      });
+    });
   }
 
   // ── 接口 2: 经典金瓜子消费流水账单 ──
-  try {
-    const payRes = await fetchWithAccount(
-      account,
-      `https://api.live.bilibili.com/pay/v1/Exchange/recordList?page=${page}&page_size=${pageSize}&coin_type=gold&t=${Date.now()}`,
-      { headers: { 'Accept': 'application/json' }, timeout: 8000 }
-    );
-    const payItems = extractList(payRes?.data);
-    scanned.push(`瓜子账单: ${payRes?.code === 0 ? `成功(${payItems.length}条)` : `状态${payRes?.code || '错误'}`}`);
-    if (payRes && payRes.code === 0 && payItems.length > 0) {
-      payItems.forEach(item => {
-        const title = item.title || item.type_name || item.desc || item.name || '';
-        let targetName = item.uname || item.target_name || item.anchor_name || '';
-        if (!targetName && title) {
-          const m = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
-          if (m) targetName = m[1];
-        }
+  const payProbe = await probeApi(
+    '瓜子账单',
+    `https://api.live.bilibili.com/pay/v1/Exchange/recordList?page=${page}&page_size=${pageSize}&coin_type=gold&t=${Date.now()}`
+  );
+  if (payProbe.ok) {
+    payProbe.items.forEach(item => {
+      const title = item.title || item.type_name || item.desc || item.name || '';
+      let targetName = item.uname || item.target_name || item.anchor_name || '';
+      if (!targetName && title) {
+        const m = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
+        if (m) targetName = m[1];
+      }
 
-        let giftName = item.gift_name || '';
-        if (!giftName && title) {
-          const m = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
-          if (m) giftName = m[1];
-          else giftName = title;
-        }
+      let giftName = item.gift_name || '';
+      if (!giftName && title) {
+        const m = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
+        if (m) giftName = m[1];
+        else giftName = title;
+      }
 
-        const rawGold = Number(item.gold || item.coin || item.cost || item.price) || 0;
-        const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
-        const { timeStr, timestamp } = normalizeTimestamp(item.time || item.ctime);
+      const rawGold = Number(item.gold || item.coin || item.cost || item.price) || 0;
+      const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
+      const { timeStr, timestamp } = normalizeTimestamp(item.time || item.ctime);
 
-        let reward = item.reward || item.hit_desc || item.ext_desc || '';
-        if (!reward && (item.ext || title)) {
-          const m = `${title} ${item.ext || ''}`.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
-          if (m) reward = m[0];
-        }
+      let reward = item.reward || item.hit_desc || item.ext_desc || '';
+      if (!reward && (item.ext || title)) {
+        const m = `${title} ${item.ext || ''}`.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
+        if (m) reward = m[0];
+      }
 
-        const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
+      const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
 
-        resultList.push({
-          id: String(item.id || item.order_id || `pay_${timestamp}_${Math.random()}`),
-          time: timeStr,
-          timestamp,
-          targetName: targetName || '当前主播',
-          roomId: item.room_id || 0,
-          giftName: giftName || '直播礼物',
-          giftNum: Number(item.gift_num || item.num) || 1,
-          battery,
-          gold: rawGold || (battery * 100),
-          reward: reward || (hasReward ? reward : '普通赠送'),
-          hasReward,
-          source: '🏛 瓜子账单'
-        });
+      resultList.push({
+        id: String(item.id || item.order_id || `pay_${timestamp}_${Math.random()}`),
+        time: timeStr,
+        timestamp,
+        targetName: targetName || '当前主播',
+        roomId: item.room_id || 0,
+        giftName: giftName || '直播礼物',
+        giftNum: Number(item.gift_num || item.num) || 1,
+        battery,
+        gold: rawGold || (battery * 100),
+        reward: reward || (hasReward ? reward : '普通赠送'),
+        hasReward,
+        source: '🏛 瓜子账单'
       });
-    }
-  } catch (err) {
-    scanned.push(`瓜子账单: 网络异常`);
+    });
   }
 
   // ── 接口 3: 粉丝勋章亲密度明细 (涵盖送给主播的道具与勋章流水) ──
-  try {
-    const medalRes = await fetchWithAccount(
-      account,
-      `https://api.live.bilibili.com/xlive/app-ucenter/v1/fansMedal/score_detail?page=${page}&page_size=${pageSize}&t=${Date.now()}`,
-      { headers: { 'Accept': 'application/json' }, timeout: 8000 }
-    );
-    const medalItems = extractList(medalRes?.data);
-    scanned.push(`勋章明细: ${medalRes?.code === 0 ? `成功(${medalItems.length}条)` : `状态${medalRes?.code || '错误'}`}`);
-    if (medalRes && medalRes.code === 0 && medalItems.length > 0) {
-      medalItems.forEach(item => {
-        const isGiftAction = item.type === 1 || item.action === 1 || String(item.action_desc || item.type_name || '').includes('礼物') || item.gift_name;
-        if (!isGiftAction && !item.gift_name) return;
+  const medalProbe = await probeApi(
+    '勋章明细',
+    `https://api.live.bilibili.com/xlive/app-ucenter/v1/fansMedal/score_detail?page=${page}&page_size=${pageSize}&t=${Date.now()}`
+  );
+  if (medalProbe.ok) {
+    medalProbe.items.forEach(item => {
+      const isGiftAction = item.type === 1 || item.action === 1 || String(item.action_desc || item.type_name || '').includes('礼物') || item.gift_name;
+      if (!isGiftAction && !item.gift_name) return;
 
-        const { timeStr, timestamp } = normalizeTimestamp(item.time || item.ctime);
-        resultList.push({
-          id: String(item.id || `medal_${timestamp}_${Math.random()}`),
-          time: timeStr,
-          timestamp,
-          targetName: item.anchor_name || item.target_name || item.uname || (item.medal_name ? `【${item.medal_name}】主播` : '主播'),
-          roomId: item.room_id || 0,
-          giftName: item.gift_name || item.action_desc || '直播道具',
-          giftNum: Number(item.gift_num || item.num) || 1,
-          battery: Math.floor((Number(item.score || 0)) / 10),
-          gold: Number(item.score || 0) * 10,
-          reward: item.reward || `获得亲密度 +${item.score || 0}`,
-          hasReward: false,
-          source: '🏅 勋章送礼'
-        });
+      const { timeStr, timestamp } = normalizeTimestamp(item.time || item.ctime);
+      resultList.push({
+        id: String(item.id || `medal_${timestamp}_${Math.random()}`),
+        time: timeStr,
+        timestamp,
+        targetName: item.anchor_name || item.target_name || item.uname || (item.medal_name ? `【${item.medal_name}】主播` : '主播'),
+        roomId: item.room_id || 0,
+        giftName: item.gift_name || item.action_desc || '直播道具',
+        giftNum: Number(item.gift_num || item.num) || 1,
+        battery: Math.floor((Number(item.score || 0)) / 10),
+        gold: Number(item.score || 0) * 10,
+        reward: item.reward || `获得亲密度 +${item.score || 0}`,
+        hasReward: false,
+        source: '🏅 勋章送礼'
       });
-    }
-  } catch (err) {
-    scanned.push(`勋章明细: 网络异常`);
+    });
   }
 
   // ── 接口 4: 直播中心订单流水 ──
-  try {
-    const orderRes = await fetchWithAccount(
-      account,
-      `https://api.live.bilibili.com/xlive/revenue/v1/order/recordList?page=${page}&page_size=${pageSize}&t=${Date.now()}`,
-      { headers: { 'Accept': 'application/json' }, timeout: 8000 }
-    );
-    const orderItems = extractList(orderRes?.data);
-    scanned.push(`官方订单: ${orderRes?.code === 0 ? `成功(${orderItems.length}条)` : `状态${orderRes?.code || '错误'}`}`);
-    if (orderRes && orderRes.code === 0 && orderItems.length > 0) {
-      orderItems.forEach(item => {
-        const title = item.title || item.type_name || item.desc || '';
-        let targetName = item.uname || item.target_name || item.anchor_name || '';
-        if (!targetName && title) {
-          const m = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
-          if (m) targetName = m[1];
-        }
+  const orderProbe = await probeApi(
+    '官方订单',
+    `https://api.live.bilibili.com/xlive/revenue/v1/order/recordList?page=${page}&page_size=${pageSize}&t=${Date.now()}`
+  );
+  if (orderProbe.ok) {
+    orderProbe.items.forEach(item => {
+      const title = item.title || item.type_name || item.desc || '';
+      let targetName = item.uname || item.target_name || item.anchor_name || '';
+      if (!targetName && title) {
+        const m = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
+        if (m) targetName = m[1];
+      }
 
-        let giftName = item.gift_name || '';
-        if (!giftName && title) {
-          const m = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
-          if (m) giftName = m[1];
-          else giftName = title;
-        }
+      let giftName = item.gift_name || '';
+      if (!giftName && title) {
+        const m = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
+        if (m) giftName = m[1];
+        else giftName = title;
+      }
 
-        const rawGold = Number(item.gold || item.coin || item.price || item.cost) || 0;
-        const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
-        const { timeStr, timestamp } = normalizeTimestamp(item.ctime || item.time);
+      const rawGold = Number(item.gold || item.coin || item.price || item.cost) || 0;
+      const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
+      const { timeStr, timestamp } = normalizeTimestamp(item.ctime || item.time);
 
-        let reward = item.reward || item.hit_desc || item.box_reward || item.ext_desc || '';
-        if (!reward && (item.ext || title)) {
-          const m = `${title} ${item.ext || ''}`.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
-          if (m) reward = m[0];
-        }
+      let reward = item.reward || item.hit_desc || item.box_reward || item.ext_desc || '';
+      if (!reward && (item.ext || title)) {
+        const m = `${title} ${item.ext || ''}`.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
+        if (m) reward = m[0];
+      }
 
-        const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
+      const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
 
-        resultList.push({
-          id: String(item.order_id || item.id || `order_${timestamp}_${Math.random()}`),
-          time: timeStr,
-          timestamp,
-          targetName: targetName || '当前主播',
-          roomId: item.room_id || 0,
-          giftName: giftName || '直播礼物',
-          giftNum: Number(item.gift_num) || 1,
-          battery,
-          gold: rawGold || (battery * 100),
-          reward: reward || (hasReward ? reward : '普通赠送'),
-          hasReward,
-          source: '🏛 官方订单'
-        });
+      resultList.push({
+        id: String(item.order_id || item.id || `order_${timestamp}_${Math.random()}`),
+        time: timeStr,
+        timestamp,
+        targetName: targetName || '当前主播',
+        roomId: item.room_id || 0,
+        giftName: giftName || '直播礼物',
+        giftNum: Number(item.gift_num) || 1,
+        battery,
+        gold: rawGold || (battery * 100),
+        reward: reward || (hasReward ? reward : '普通赠送'),
+        hasReward,
+        source: '🏛 官方订单'
       });
-    }
-  } catch (err) {
-    scanned.push(`官方订单: 网络异常`);
+    });
   }
 
-  // ── 接口 5: B 站主站支付中心订单 (包含大航海、电池充值与送礼全量流水) ──
-  try {
-    const mainOrderRes = await fetchWithAccount(
-      account,
-      `https://api.bilibili.com/x/pay/order/list?page_num=${page}&page_size=${pageSize}&t=${Date.now()}`,
-      { headers: { 'Accept': 'application/json' }, timeout: 8000 }
-    );
-    const mainOrderItems = extractList(mainOrderRes?.data);
-    scanned.push(`主站账单: ${mainOrderRes?.code === 0 ? `成功(${mainOrderItems.length}条)` : `状态${mainOrderRes?.code || '错误'}`}`);
-    if (mainOrderRes && mainOrderRes.code === 0 && mainOrderItems.length > 0) {
-      mainOrderItems.forEach(item => {
-        const desc = item.order_name || item.name || item.title || item.order_desc || '';
-        if (!desc.includes('直播') && !desc.includes('礼物') && !desc.includes('电池') && !desc.includes('舰长') && !desc.includes('瓜子')) return;
+  // ── 接口 5: B 站主站支付中心订单 ──
+  const mainOrderProbe = await probeApi(
+    '主站账单',
+    `https://api.bilibili.com/x/pay/order/list?page_num=${page}&page_size=${pageSize}&t=${Date.now()}`
+  );
+  if (mainOrderProbe.ok) {
+    mainOrderProbe.items.forEach(item => {
+      const desc = item.order_name || item.name || item.title || item.order_desc || '';
+      if (!desc.includes('直播') && !desc.includes('礼物') && !desc.includes('电池') && !desc.includes('舰长') && !desc.includes('瓜子')) return;
 
-        const { timeStr, timestamp } = normalizeTimestamp(item.ctime || item.create_time || item.time);
-        const costFen = Number(item.amount || item.bp || item.price) || 0;
-        const costBattery = Math.floor(costFen / 100);
+      const { timeStr, timestamp } = normalizeTimestamp(item.ctime || item.create_time || item.time);
+      const costFen = Number(item.amount || item.bp || item.price) || 0;
+      const costBattery = Math.floor(costFen / 100);
 
-        resultList.push({
-          id: String(item.order_no || item.order_id || `main_${timestamp}_${Math.random()}`),
-          time: timeStr,
-          timestamp,
-          targetName: item.merchant_name || item.uname || 'B站直播',
-          roomId: 0,
-          giftName: desc || '直播消费',
-          giftNum: 1,
-          battery: costBattery,
-          gold: costBattery * 100,
-          reward: item.reward || '官方交易订单',
-          hasReward: false,
-          source: '💳 支付账单'
-        });
+      resultList.push({
+        id: String(item.order_no || item.order_id || `main_${timestamp}_${Math.random()}`),
+        time: timeStr,
+        timestamp,
+        targetName: item.merchant_name || item.uname || 'B站直播',
+        roomId: 0,
+        giftName: desc || '直播消费',
+        giftNum: 1,
+        battery: costBattery,
+        gold: costBattery * 100,
+        reward: item.reward || '官方交易订单',
+        hasReward: false,
+        source: '💳 支付账单'
       });
-    }
-  } catch (err) {
-    scanned.push(`主站账单: 网络异常`);
+    });
+  }
+
+  // ── 接口 6: 若在直播间，探测当前房间个人贡献榜 ──
+  if (roomId) {
+    try {
+      const roomDetails = await BiliApi.getRoomDetails(roomId);
+      if (roomDetails && roomDetails.roomId) {
+        const rankProbe = await probeApi(
+          '房间贡献',
+          `https://api.live.bilibili.com/xlive/general-interface/v1/rank/getPersonalRank?room_id=${roomDetails.roomId}&ruid=${roomDetails.anchorUid}&t=${Date.now()}`
+        );
+        if (rankProbe.ok && rankProbe.raw?.data) {
+          const rankData = rankProbe.raw.data;
+          const roomGold = Number(rankData.gold || rankData.coin || rankData.score) || 0;
+          if (roomGold > 0) {
+            const roomBattery = Math.floor(roomGold / 100);
+            resultList.push({
+              id: `room_contrib_${roomDetails.roomId}_${account.mid}`,
+              time: '本场直播累计',
+              timestamp: Date.now() + 1000,
+              targetName: `当前主播(房间 ${roomDetails.roomId})`,
+              roomId: roomDetails.roomId,
+              giftName: '当前房间累计贡献',
+              giftNum: 1,
+              battery: roomBattery,
+              gold: roomGold,
+              reward: rankData.rank ? `房间排名: 第 ${rankData.rank} 名` : '房间送礼榜贡献',
+              hasReward: true,
+              source: '🏆 房间贡献'
+            });
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   // 去重并按时间倒序排列
@@ -1154,7 +1189,7 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
 
   const sortedList = Array.from(uniqueMap.values()).sort((a, b) => b.timestamp - a.timestamp);
 
-  console.log(`[送礼历史-远端纯净版] 命中记录数: ${sortedList.length}条 | 探测报告: ${scanned.join(', ')}`);
+  console.log(`[送礼历史-探针矩阵] 聚合总数: ${sortedList.length}条 | 探测报告: ${scanned.join(', ')}`);
 
   return {
     success: true,
