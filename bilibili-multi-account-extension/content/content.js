@@ -1431,9 +1431,92 @@
   const activePeriodicTasks = new Map();
   let latestAccountsList = [];
 
+  /**
+   * 带自动重试的安全消息发送器
+   * 应对 MV3 Service Worker 偶发休眠唤醒时的端口断开异常
+   */
+  async function safeSendMessageWithRetry(msg, maxRetries = 2) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await chrome.runtime.sendMessage(msg);
+        return res;
+      } catch (err) {
+        const errStr = String(err?.message || err);
+        const isConnLost = errStr.includes('Could not establish connection') ||
+                           errStr.includes('message port closed') ||
+                           errStr.includes('Receiving end does not exist');
+        if (isConnLost && attempt < maxRetries) {
+          console.warn(`[送礼通信] Service Worker 唤醒重试 (${attempt}/${maxRetries}):`, err);
+          await new Promise(r => setTimeout(r, 600));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * 抗后台标签页节流的高精度时钟驱动器
+   * 优先使用独立线程 Web Worker，避开 Chrome 对后台页面的 1 分钟降频限制；降级时使用时间戳补偿
+   */
+  function createResilientTicker(onTick) {
+    let worker = null;
+    let intervalId = null;
+    let lastTime = Date.now();
+
+    try {
+      const code = `
+        let t = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (t) clearInterval(t);
+            t = setInterval(() => self.postMessage('tick'), 1000);
+          } else if (e.data === 'stop') {
+            if (t) clearInterval(t);
+            t = null;
+          }
+        };
+      `;
+      const blob = new Blob([code], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      worker = new Worker(workerUrl);
+      worker.onmessage = (e) => {
+        if (e.data === 'tick') {
+          lastTime = Date.now();
+          onTick(1);
+        }
+      };
+      worker.postMessage('start');
+    } catch (_) {
+      // 若受页面 CSP 限制无法使用 Blob Worker，降级为时间戳校准的主线程计时器
+      intervalId = setInterval(() => {
+        const now = Date.now();
+        const diffSec = Math.max(1, Math.round((now - lastTime) / 1000));
+        lastTime = now;
+        onTick(diffSec);
+      }, 1000);
+    }
+
+    return {
+      stop() {
+        if (worker) {
+          try {
+            worker.postMessage('stop');
+            worker.terminate();
+          } catch (_) {}
+          worker = null;
+        }
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      }
+    };
+  }
+
   window.addEventListener('beforeunload', () => {
     activePeriodicTasks.forEach(task => {
-      if (task.tickId) clearInterval(task.tickId);
+      if (task.ticker) task.ticker.stop();
     });
     activePeriodicTasks.clear();
   });
@@ -1442,9 +1525,10 @@
     const midStr = String(mid);
     const task = activePeriodicTasks.get(midStr);
     if (!task) return;
-    if (task.tickId) clearInterval(task.tickId);
+    if (task.ticker) task.ticker.stop();
     task.status = 'stopped';
     task.stopReason = reason;
+    task.isExecuting = false;
     task.notifyAll();
     activePeriodicTasks.delete(midStr);
   }
@@ -1474,7 +1558,9 @@
       nextSecondsLeft: intervalSec,
       status: 'running',
       stopReason: '',
-      tickId: null,
+      isExecuting: false,
+      consecutiveErrors: 0,
+      ticker: null,
       listeners: new Set(),
       notifyAll() {
         this.listeners.forEach(fn => {
@@ -1488,116 +1574,167 @@
     // 立即执行第 1 次发送
     executePeriodicStep(task);
 
-    // 启动 1 秒级计时器驱动倒计时
-    task.tickId = setInterval(() => {
+    // 启动抗后台节流时钟驱动倒计时
+    task.ticker = createResilientTicker((elapsedSec) => {
       if (task.status !== 'running') {
-        clearInterval(task.tickId);
+        if (task.ticker) task.ticker.stop();
         return;
       }
-      task.nextSecondsLeft--;
+
+      // 如果当前仍在发送中（如网络响应慢），跳过当前轮次避免并发请求堆积
+      if (task.isExecuting) {
+        return;
+      }
+
+      task.nextSecondsLeft -= elapsedSec;
       if (task.nextSecondsLeft <= 0) {
         task.nextSecondsLeft = task.intervalSec;
         executePeriodicStep(task);
       }
       task.notifyAll();
-    }, 1000);
+    });
 
     task.notifyAll();
     return task;
   }
 
   async function executePeriodicStep(task) {
-    const pageCtx = getPageContext();
-    if (!pageCtx.isLive || !pageCtx.liveShortId) {
-      stopPeriodicTask(task.mid, '未在直播间');
-      showToast('⚠️ 未检测到直播间房间号，循环送礼已自动停止');
-      return;
-    }
+    if (task.isExecuting || task.status !== 'running') return;
+    task.isExecuting = true;
 
-    const acc = latestAccountsList.find(a => String(a.mid) === String(task.mid));
-    if (!acc) {
-      stopPeriodicTask(task.mid, '未找到指定账号');
-      return;
-    }
-
-    if (task.isBag) {
-      const bagItem = Array.isArray(acc.bagItems)
-        ? acc.bagItems.find(b => (String(b.gift_id || b.giftId) === String(task.giftId)) || (task.bagId && String(b.bag_id || b.bagId) === String(task.bagId)))
-        : null;
-
-      if (!bagItem || bagItem.gift_num <= 0) {
-        stopPeriodicTask(task.mid, '背包道具已用完');
-        showToast(`⚠️ 【${acc.uname || acc.mid}】背包中【${task.giftName}】已用尽，循环送礼已自动停止`);
+    try {
+      const pageCtx = getPageContext();
+      if (!pageCtx.isLive || !pageCtx.liveShortId) {
+        stopPeriodicTask(task.mid, '未在直播间');
+        showToast('⚠️ 未检测到直播间房间号，循环送礼已自动停止');
         return;
       }
 
-      const sendNum = Math.min(task.countPerSend, bagItem.gift_num);
-      try {
-        const res = await chrome.runtime.sendMessage({
-          action: 'SEND_SINGLE_BAG_GIFT',
-          mid: acc.mid,
-          roomId: pageCtx.liveShortId,
-          bagId: bagItem.bag_id || bagItem.bagId || task.bagId,
-          giftId: task.giftId,
-          giftNum: sendNum
-        });
-
-        if (res && res.success) {
-          task.totalTimes++;
-          task.totalSentCount += sendNum;
-          bagItem.gift_num = Math.max(0, bagItem.gift_num - sendNum);
-          if (acc.bagCount !== undefined) {
-            acc.bagCount = Math.max(0, acc.bagCount - sendNum);
-          }
-          if (typeof acc._updateBadges === 'function') acc._updateBadges();
-          task.notifyAll();
-
-          if (bagItem.gift_num <= 0) {
-            stopPeriodicTask(task.mid, '背包道具已送完');
-            showToast(`✔【${acc.uname || acc.mid}】背包中【${task.giftName}】已全部送完 (共送出 ${task.totalSentCount} 个)`);
-          }
-        } else {
-          const msg = res?.message || '赠送失败';
-          stopPeriodicTask(task.mid, msg);
-          showToast(`⚠️ 循环送礼失败: ${msg}`);
-        }
-      } catch (err) {
-        stopPeriodicTask(task.mid, err.message);
-        showToast(`⚠️ 循环送礼异常: ${err.message}`);
-      }
-    } else {
-      const totalBatteryNeeded = task.batteryCost * task.countPerSend;
-      if ((acc.battery ?? 0) < totalBatteryNeeded) {
-        stopPeriodicTask(task.mid, '电池不足');
-        showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需 ${totalBatteryNeeded}，余 ${acc.battery}），循环送礼已自动停止`);
+      const acc = latestAccountsList.find(a => String(a.mid) === String(task.mid));
+      if (!acc) {
+        stopPeriodicTask(task.mid, '未找到指定账号');
         return;
       }
 
-      try {
-        const res = await chrome.runtime.sendMessage({
-          action: 'SEND_GOLD_GIFT',
-          mid: acc.mid,
-          roomId: pageCtx.liveShortId,
-          giftId: task.giftId,
-          price: task.price,
-          giftNum: task.countPerSend
-        });
+      if (task.isBag) {
+        const bagItem = Array.isArray(acc.bagItems)
+          ? acc.bagItems.find(b => (String(b.gift_id || b.giftId) === String(task.giftId)) || (task.bagId && String(b.bag_id || b.bagId) === String(task.bagId)))
+          : null;
 
-        if (res && res.success) {
-          task.totalTimes++;
-          task.totalSentCount += task.countPerSend;
-          acc.battery = Math.max(0, (acc.battery ?? 0) - totalBatteryNeeded);
-          if (typeof acc._updateBadges === 'function') acc._updateBadges();
-          task.notifyAll();
-        } else {
-          const errMsg = res?.message || '送礼失败';
-          stopPeriodicTask(task.mid, errMsg);
-          showToast(`⚠️ 循环送礼失败: ${errMsg}`);
+        if (!bagItem || bagItem.gift_num <= 0) {
+          stopPeriodicTask(task.mid, '背包道具已用完');
+          showToast(`⚠️ 【${acc.uname || acc.mid}】背包中【${task.giftName}】已用尽，循环送礼已自动停止`);
+          return;
         }
-      } catch (err) {
-        stopPeriodicTask(task.mid, err.message);
-        showToast(`⚠️ 循环送礼异常: ${err.message}`);
+
+        const sendNum = Math.min(task.countPerSend, bagItem.gift_num);
+        try {
+          const res = await safeSendMessageWithRetry({
+            action: 'SEND_SINGLE_BAG_GIFT',
+            mid: acc.mid,
+            roomId: pageCtx.liveShortId,
+            bagId: bagItem.bag_id || bagItem.bagId || task.bagId,
+            giftId: task.giftId,
+            giftNum: sendNum
+          });
+
+          if (res && res.success) {
+            task.consecutiveErrors = 0;
+            task.totalTimes++;
+            task.totalSentCount += sendNum;
+            bagItem.gift_num = Math.max(0, bagItem.gift_num - sendNum);
+            if (acc.bagCount !== undefined) {
+              acc.bagCount = Math.max(0, acc.bagCount - sendNum);
+            }
+            if (typeof acc._updateBadges === 'function') acc._updateBadges();
+            task.notifyAll();
+
+            if (bagItem.gift_num <= 0) {
+              stopPeriodicTask(task.mid, '背包道具已送完');
+              showToast(`✔【${acc.uname || acc.mid}】背包中【${task.giftName}】已全部送完 (共送出 ${task.totalSentCount} 个)`);
+            }
+          } else {
+            const msg = res?.message || '赠送失败';
+            const isTimeoutOrLimit = msg.includes('超时') || msg.includes('频繁') || msg.includes('Timeout');
+
+            if (isTimeoutOrLimit && task.consecutiveErrors < 2) {
+              task.consecutiveErrors++;
+              task.nextSecondsLeft = Math.max(task.intervalSec, 6); // 遇到超时暂缓6秒避让风控
+              showToast(`⚠️ 【${acc.uname || acc.mid}】送礼接口超时，将在 ${task.nextSecondsLeft} 秒后自动重试(第${task.consecutiveErrors}/2次)`);
+              task.notifyAll();
+            } else {
+              stopPeriodicTask(task.mid, msg);
+              showToast(`⚠️ 循环送礼失败: ${msg}`);
+            }
+          }
+        } catch (err) {
+          const errStr = err.message || String(err);
+          const isTimeoutOrConn = errStr.includes('超时') || errStr.includes('Timeout');
+          if (isTimeoutOrConn && task.consecutiveErrors < 2) {
+            task.consecutiveErrors++;
+            task.nextSecondsLeft = Math.max(task.intervalSec, 6);
+            showToast(`⚠️ 通信或网络超时，将在 ${task.nextSecondsLeft} 秒后自动重试(第${task.consecutiveErrors}/2次)`);
+            task.notifyAll();
+          } else {
+            stopPeriodicTask(task.mid, errStr);
+            showToast(`⚠️ 循环送礼异常: ${errStr}`);
+          }
+        }
+      } else {
+        const totalBatteryNeeded = task.batteryCost * task.countPerSend;
+        if ((acc.battery ?? 0) < totalBatteryNeeded) {
+          stopPeriodicTask(task.mid, '电池不足');
+          showToast(`⚠️ 【${acc.uname || acc.mid}】电池不足（需 ${totalBatteryNeeded}，余 ${acc.battery}），循环送礼已自动停止`);
+          return;
+        }
+
+        try {
+          const res = await safeSendMessageWithRetry({
+            action: 'SEND_GOLD_GIFT',
+            mid: acc.mid,
+            roomId: pageCtx.liveShortId,
+            giftId: task.giftId,
+            price: task.price,
+            giftNum: task.countPerSend
+          });
+
+          if (res && res.success) {
+            task.consecutiveErrors = 0;
+            task.totalTimes++;
+            task.totalSentCount += task.countPerSend;
+            acc.battery = Math.max(0, (acc.battery ?? 0) - totalBatteryNeeded);
+            if (typeof acc._updateBadges === 'function') acc._updateBadges();
+            task.notifyAll();
+          } else {
+            const errMsg = res?.message || '送礼失败';
+            const isTimeoutOrLimit = errMsg.includes('超时') || errMsg.includes('频繁') || errMsg.includes('Timeout');
+
+            if (isTimeoutOrLimit && task.consecutiveErrors < 2) {
+              task.consecutiveErrors++;
+              task.nextSecondsLeft = Math.max(task.intervalSec, 6);
+              showToast(`⚠️ 【${acc.uname || acc.mid}】送礼接口超时，将在 ${task.nextSecondsLeft} 秒后自动重试(第${task.consecutiveErrors}/2次)`);
+              task.notifyAll();
+            } else {
+              stopPeriodicTask(task.mid, errMsg);
+              showToast(`⚠️ 循环送礼失败: ${errMsg}`);
+            }
+          }
+        } catch (err) {
+          const errStr = err.message || String(err);
+          const isTimeoutOrConn = errStr.includes('超时') || errStr.includes('Timeout');
+          if (isTimeoutOrConn && task.consecutiveErrors < 2) {
+            task.consecutiveErrors++;
+            task.nextSecondsLeft = Math.max(task.intervalSec, 6);
+            showToast(`⚠️ 通信或网络超时，将在 ${task.nextSecondsLeft} 秒后自动重试(第${task.consecutiveErrors}/2次)`);
+            task.notifyAll();
+          } else {
+            stopPeriodicTask(task.mid, errStr);
+            showToast(`⚠️ 循环送礼异常: ${errStr}`);
+          }
+        }
       }
+    } finally {
+      task.isExecuting = false;
     }
   }
 

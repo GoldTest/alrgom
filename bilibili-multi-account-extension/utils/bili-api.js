@@ -2,13 +2,37 @@
  * B站协议接口交互封装
  */
 
+/**
+ * 封装带超时中断控制的 fetch，防止网络响应慢挂起扩展
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    try {
+      controller.abort();
+    } catch (_) {}
+  }, timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`网络请求超时(${Math.round(timeoutMs / 1000)}秒)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const BiliApi = {
   /**
    * 生成登录二维码
    * @returns {Promise<{ url: string, qrcode_key: string }>}
    */
   async generateQrCode() {
-    const res = await fetch('https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
+    const res = await fetchWithTimeout('https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
     const json = await res.json();
     if (json.code !== 0) {
       throw new Error(json.message || '生成登录二维码失败');
@@ -22,7 +46,7 @@ export const BiliApi = {
    * @returns {Promise<{ code: number, message: string, cookies?: Object }>}
    */
   async pollQrCode(qrcodeKey) {
-    const res = await fetch(`https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=${encodeURIComponent(qrcodeKey)}`);
+    const res = await fetchWithTimeout(`https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=${encodeURIComponent(qrcodeKey)}`);
     const json = await res.json();
     if (json.code !== 0) {
       throw new Error(json.message || '轮询扫码接口异常');
@@ -60,7 +84,7 @@ export const BiliApi = {
    * 获取账号用户信息
    */
   async fetchUserInfoWithCookie() {
-    const res = await fetch('https://api.bilibili.com/x/web-interface/nav', {
+    const res = await fetchWithTimeout('https://api.bilibili.com/x/web-interface/nav', {
       headers: { 'Accept': 'application/json' }
     });
     return await res.json();
@@ -72,7 +96,7 @@ export const BiliApi = {
    * @returns {Promise<{ roomId: number, anchorUid: number, liveStatus: number }>}
    */
   async getRoomDetails(roomIdOrShortId) {
-    const res = await fetch(`https://api.live.bilibili.com/room/v1/Room/room_init?id=${roomIdOrShortId}`);
+    const res = await fetchWithTimeout(`https://api.live.bilibili.com/room/v1/Room/room_init?id=${roomIdOrShortId}`);
     const json = await res.json();
     if (json.code !== 0 || !json.data) {
       throw new Error(json.message || '获取直播间信息失败');

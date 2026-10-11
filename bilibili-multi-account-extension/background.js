@@ -6,13 +6,30 @@ const DNR_RULE_ID = 8888;
 
 /**
  * 互斥锁，确保带特定 Cookie 的后台请求按序执行，不互相干扰
+ * 增加单任务执行超时看门狗，避免任意异常导致队列死锁
  */
 class AsyncLock {
   constructor() {
     this.queue = Promise.resolve();
   }
-  run(fn) {
-    const result = this.queue.then(() => fn());
+  run(fn, maxWaitMs = 15000) {
+    const execute = async () => {
+      let timeoutId;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('请求锁执行超时(15s)，已强制释放'));
+        }, maxWaitMs);
+      });
+
+      try {
+        return await Promise.race([fn(), timeoutPromise]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    const result = this.queue.then(execute);
+    // 发生异常时继续向下传递队列，保证后续任务能够继续执行
     this.queue = result.catch(() => {});
     return result;
   }
@@ -73,12 +90,43 @@ async function clearTargetCookieRule() {
 
 /**
  * 带指定账号凭证发起请求
+ * 支持超时中断控制（默认 10 秒），防止网络请求挂起阻塞锁队列
  */
 async function fetchWithAccount(account, url, options = {}) {
+  const timeoutMs = options.timeout || 10000;
+  const { timeout: _, ...fetchOptions } = options;
+
   return requestLock.run(async () => {
+    const controller = new AbortController();
+    let isTimedOut = false;
+    const timeoutTimer = setTimeout(() => {
+      isTimedOut = true;
+      try {
+        controller.abort();
+      } catch (_) {}
+    }, timeoutMs);
+
+    if (fetchOptions.signal) {
+      fetchOptions.signal.addEventListener('abort', () => {
+        try {
+          controller.abort();
+        } catch (_) {}
+      });
+    }
+    fetchOptions.signal = controller.signal;
+
     try {
       await setTargetCookieRule(account, url);
-      const res = await fetch(url, options);
+      let res;
+      try {
+        res = await fetch(url, fetchOptions);
+      } catch (fetchErr) {
+        if (isTimedOut || fetchErr.name === 'AbortError') {
+          throw new Error(`网络请求超时(${Math.round(timeoutMs / 1000)}秒)`);
+        }
+        throw fetchErr;
+      }
+
       const rawText = await res.text();
       let data = null;
       try {
@@ -99,6 +147,7 @@ async function fetchWithAccount(account, url, options = {}) {
       }
       return data;
     } finally {
+      clearTimeout(timeoutTimer);
       await clearTargetCookieRule();
     }
   });
@@ -607,6 +656,21 @@ async function fetchRoomGiftList(account, realRoomId) {
 }
 
 /**
+ * 解析送礼返回结果，生成清晰友好的错误说明
+ */
+function formatGiftErrorMessage(res, fallbackRes, defaultMsg = '赠送失败') {
+  const code = res?.code !== undefined ? res.code : fallbackRes?.code;
+  const msg = res?.message || res?.msg || fallbackRes?.message || fallbackRes?.msg || defaultMsg;
+  if (code === -504 || code === 504 || code === -500 || String(msg).includes('超时') || String(msg).toLowerCase().includes('timeout')) {
+    return `接口响应超时(${code || 'Timeout'}): B站服务响应慢或受风控节流，建议调大间隔(如5~10秒)`;
+  }
+  if (code === 1003 || code === 1002 || String(msg).includes('频繁')) {
+    return `操作过于频繁(${code}): 触发B站频率保护，请调大发送间隔`;
+  }
+  return `${msg} (代码: ${code ?? '未知'})`;
+}
+
+/**
  * 单账号送出直播间金瓜子礼物（扣电池）
  */
 async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftPrice = 0, giftNum = 1) {
@@ -645,9 +709,7 @@ async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftPrice 
       return { success: true, message: '送礼成功' };
     }
 
-    const errCode = res?.code !== undefined ? res.code : -1;
-    const errMsg = res?.message || res?.msg || '送礼失败';
-    return { success: false, message: `${errMsg} (代码: ${errCode})` };
+    return { success: false, message: formatGiftErrorMessage(res, null, '送礼失败') };
   } catch (err) {
     return { success: false, message: `网络异常: ${err.message}` };
   }
@@ -809,9 +871,7 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
       return { success: true, message: '赠送成功' };
     }
 
-    const errCode = res?.code !== undefined ? res.code : resFallback?.code;
-    const errMsg = res?.message || resFallback?.message || '赠送失败';
-    return { success: false, message: `${errMsg} (${errCode})` };
+    return { success: false, message: formatGiftErrorMessage(res, resFallback, '背包赠送失败') };
   } catch (err) {
     return { success: false, message: `网络异常: ${err.message}` };
   }
