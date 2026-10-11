@@ -2245,6 +2245,26 @@
 
                 if (res && res.success) {
                   showToast(`✔【${acc.uname || acc.mid}】已送出【${item.gift_name}】x${sendCount}`);
+
+                  // 自动留痕到本地历史记录
+                  chrome.runtime.sendMessage({
+                    action: 'RECORD_GIFT_LOG',
+                    logItem: {
+                      timestamp: Date.now(),
+                      time: new Date().toLocaleString(),
+                      mid: acc.mid,
+                      uname: acc.uname || acc.mid,
+                      targetName: `房间 ${pageCtx.liveShortId}`,
+                      roomId: pageCtx.liveShortId,
+                      giftId: item.gift_id,
+                      giftName: item.gift_name,
+                      giftNum: sendCount,
+                      battery: 0,
+                      gold: 0,
+                      isBag: true,
+                      reward: '背包道具赠送'
+                    }
+                  }).catch(() => {});
                   
                   // 局部更新该礼物数量
                   item.gift_num -= sendCount;
@@ -2560,6 +2580,26 @@
                           acc._updateBadges();
                           batteryTag.innerHTML = `🔋 <b class="battery-num">${acc.battery}</b>电池 ▴`;
                           showToast(`✔【${acc.uname || acc.mid}】已送出【${gift.name}】x1`);
+
+                          // 本地自动留痕
+                          chrome.runtime.sendMessage({
+                            action: 'RECORD_GIFT_LOG',
+                            logItem: {
+                              timestamp: Date.now(),
+                              time: new Date().toLocaleString(),
+                              mid: acc.mid,
+                              uname: acc.uname || acc.mid,
+                              targetName: `房间 ${pageCtx.liveShortId}`,
+                              roomId: pageCtx.liveShortId,
+                              giftId: gift.id,
+                              giftName: gift.name,
+                              giftNum: 1,
+                              battery: gift.battery || 0,
+                              gold: (gift.battery || 0) * 100,
+                              isBag: false,
+                              reward: '普通赠送'
+                            }
+                          }).catch(() => {});
                         } else {
                           const errMsg = sendRes?.message || '送礼失败';
 
@@ -2585,6 +2625,25 @@
                                     acc._updateBadges();
                                   }
                                   showToast(`✔【${acc.uname || acc.mid}】已从背包送出【${gift.name}】x1`);
+
+                                  chrome.runtime.sendMessage({
+                                    action: 'RECORD_GIFT_LOG',
+                                    logItem: {
+                                      timestamp: Date.now(),
+                                      time: new Date().toLocaleString(),
+                                      mid: acc.mid,
+                                      uname: acc.uname || acc.mid,
+                                      targetName: `房间 ${pageCtx.liveShortId}`,
+                                      roomId: pageCtx.liveShortId,
+                                      giftId: gift.id,
+                                      giftName: gift.name,
+                                      giftNum: 1,
+                                      battery: 0,
+                                      gold: 0,
+                                      isBag: true,
+                                      reward: '背包道具赠送'
+                                    }
+                                  }).catch(() => {});
                                 } else {
                                   showToast(sendBagRes?.message || '背包赠送失败');
                                 }
@@ -2697,12 +2756,17 @@
         async function loadAndRenderHistory() {
           historyDrawer.innerHTML = '<div class="history-empty">⏳ 正在拉取官方订单与送礼记录...</div>';
           try {
+            const pageCtx = getPageContext();
             const res = await chrome.runtime.sendMessage({
               action: 'GET_GIFT_HISTORY',
-              mid: acc.mid
+              mid: acc.mid,
+              roomId: pageCtx.isLive ? pageCtx.liveShortId : ''
             });
 
             if (!res || !res.success || !Array.isArray(res.list) || res.list.length === 0) {
+              const scannedText = Array.isArray(res?.scanned) && res.scanned.length > 0
+                ? res.scanned.join(' | ')
+                : '已扫描瓜子账单/盲盒记录/订单中心';
               historyDrawer.innerHTML = `
                 <div class="history-header">
                   <span class="history-title">📜 送礼与消费明细</span>
@@ -2710,7 +2774,13 @@
                     <button class="btn-refresh-history">🔄 刷新</button>
                   </div>
                 </div>
-                <div class="history-empty">📭 近期暂无送礼或消费记录</div>
+                <div class="history-empty">
+                  <div>📭 近期暂无送礼或消费记录</div>
+                  <div style="font-size: 9px; color: #bfbfbf; margin-top: 3px;">(${scannedText})</div>
+                  <div style="font-size: 9px; color: #9499a0; margin-top: 5px; line-height: 1.4;">
+                    💡 提示：若赠送的是免费道具(辣条/小心心)或刚切换账号，送出时将自动实时收录
+                  </div>
+                </div>
               `;
               const btnRefresh = historyDrawer.querySelector('.btn-refresh-history');
               btnRefresh && btnRefresh.addEventListener('click', (e) => {
