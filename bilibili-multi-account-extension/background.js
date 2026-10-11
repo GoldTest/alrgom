@@ -673,7 +673,7 @@ function formatGiftErrorMessage(res, fallbackRes, defaultMsg = '赠送失败') {
 /**
  * 单账号送出直播间金瓜子礼物（扣电池）
  */
-async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftPrice = 0, giftNum = 1) {
+async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftPrice = 0, giftNum = 1, giftName = '') {
   const rnd = Math.floor(Date.now() / 1000);
   const commonParams = {
     uid: String(account.mid),
@@ -706,6 +706,21 @@ async function sendSingleGoldGift(account, roomId, anchorUid, giftId, giftPrice 
     });
 
     if (res && res.code === 0) {
+      appendLocalGiftLog({
+        timestamp: Date.now(),
+        time: new Date().toLocaleString(),
+        mid: account.mid,
+        uname: account.uname || account.mid,
+        targetName: `房间 ${roomId}`,
+        roomId: String(roomId),
+        giftId: String(giftId),
+        giftName: giftName || `金瓜子礼物(${giftId})`,
+        giftNum: Number(giftNum) || 1,
+        battery: Math.floor((Number(giftPrice) || 0) * (Number(giftNum) || 1) / 100),
+        gold: (Number(giftPrice) || 0) * (Number(giftNum) || 1),
+        isBag: false,
+        reward: '普通赠送'
+      }).catch(() => {});
       return { success: true, message: '送礼成功' };
     }
 
@@ -815,7 +830,7 @@ async function getAccountsLiveStatus() {
 /**
  * 赠送指定账号背包中的单个道具
  */
-async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
+async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1, giftName = '' }) {
   const accounts = await Storage.getAccounts();
   const account = accounts.find(a => String(a.mid) === String(mid));
   if (!account) {
@@ -857,6 +872,21 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
     });
 
     if (res && res.code === 0) {
+      appendLocalGiftLog({
+        timestamp: Date.now(),
+        time: new Date().toLocaleString(),
+        mid: account.mid,
+        uname: account.uname || account.mid,
+        targetName: `房间 ${realRoomId || roomId}`,
+        roomId: String(realRoomId || roomId),
+        giftId: String(giftId),
+        giftName: giftName || '背包道具',
+        giftNum: Number(giftNum) || 1,
+        battery: 0,
+        gold: 0,
+        isBag: true,
+        reward: '背包道具赠送'
+      }).catch(() => {});
       return { success: true, message: '赠送成功' };
     }
 
@@ -868,6 +898,21 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
     });
 
     if (resFallback && resFallback.code === 0) {
+      appendLocalGiftLog({
+        timestamp: Date.now(),
+        time: new Date().toLocaleString(),
+        mid: account.mid,
+        uname: account.uname || account.mid,
+        targetName: `房间 ${realRoomId || roomId}`,
+        roomId: String(realRoomId || roomId),
+        giftId: String(giftId),
+        giftName: giftName || '背包道具',
+        giftNum: Number(giftNum) || 1,
+        battery: 0,
+        gold: 0,
+        isBag: true,
+        reward: '背包道具赠送'
+      }).catch(() => {});
       return { success: true, message: '赠送成功' };
     }
 
@@ -875,6 +920,187 @@ async function sendSingleBagGift({ mid, roomId, bagId, giftId, giftNum = 1 }) {
   } catch (err) {
     return { success: false, message: `网络异常: ${err.message}` };
   }
+}
+
+/**
+ * 记录单次送礼日志到本地持久化存储（作为辅助记录与历史展示补充）
+ */
+async function appendLocalGiftLog(logItem) {
+  try {
+    const data = await chrome.storage.local.get(['localGiftLogs']);
+    const list = Array.isArray(data.localGiftLogs) ? data.localGiftLogs : [];
+    list.unshift(logItem);
+    // 最多保留最新 300 条
+    if (list.length > 300) list.length = 300;
+    await chrome.storage.local.set({ localGiftLogs: list });
+  } catch (err) {
+    console.warn('记录本地送礼日志失败:', err);
+  }
+}
+
+/**
+ * 获取指定账号的历史送礼与消费记录
+ * 融合 B 站官方订单/金瓜子消费接口与本地送礼记录，解析送给谁、送了什么、消耗电池及爆出产物
+ */
+async function fetchGiftHistory({ mid, page = 1, pageSize = 20 }) {
+  const accounts = await Storage.getAccounts();
+  const account = accounts.find(a => String(a.mid) === String(mid));
+  if (!account) {
+    return { success: false, message: '未找到指定账号', list: [] };
+  }
+
+  const resultList = [];
+
+  // 1. 读取本地持久化送礼记录（覆盖背包道具和插件定时循环送礼记录）
+  try {
+    const localData = await chrome.storage.local.get(['localGiftLogs']);
+    const allLocalLogs = Array.isArray(localData.localGiftLogs) ? localData.localGiftLogs : [];
+    const matchedLocal = allLocalLogs.filter(log => String(log.mid) === String(mid));
+    matchedLocal.forEach(item => {
+      resultList.push({
+        id: item.id || `local_${item.timestamp}_${Math.random()}`,
+        time: item.time || new Date(item.timestamp).toLocaleString(),
+        timestamp: item.timestamp || Date.now(),
+        targetName: item.targetName || (item.roomId ? `房间 ${item.roomId}` : '主播'),
+        roomId: item.roomId || 0,
+        giftName: item.giftName || '直播礼物',
+        giftNum: item.giftNum || 1,
+        battery: item.battery || 0,
+        gold: item.gold || (item.battery ? item.battery * 100 : 0),
+        reward: item.reward || (item.isBag ? '背包道具赠送' : '普通赠送'),
+        hasReward: !!(item.reward && item.reward !== '普通赠送' && item.reward !== '背包道具赠送' && item.reward !== '无爆出'),
+        source: item.isBag ? '🎒 背包送礼' : '⚡ 电池送礼'
+      });
+    });
+  } catch (e) {}
+
+  // 2. 请求 B 站官方订单流水接口 (包含官方消费金瓜子/电池礼物、标题、爆出与产物)
+  try {
+    const orderRes = await fetchWithAccount(
+      account,
+      `https://api.live.bilibili.com/xlive/revenue/v1/order/recordList?page=${page}&page_size=${pageSize}&t=${Date.now()}`,
+      { headers: { 'Accept': 'application/json' }, timeout: 8000 }
+    );
+
+    if (orderRes && orderRes.code === 0 && orderRes.data && Array.isArray(orderRes.data.list)) {
+      orderRes.data.list.forEach(item => {
+        const title = item.title || item.type_name || item.desc || '';
+        // 智能提取主播昵称
+        let targetName = item.uname || item.target_name || item.anchor_name || '';
+        if (!targetName && title) {
+          const mTarget = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
+          if (mTarget) targetName = mTarget[1];
+        }
+
+        // 智能提取礼物名称
+        let giftName = item.gift_name || '';
+        if (!giftName && title) {
+          const mGift = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
+          if (mGift) giftName = mGift[1];
+          else giftName = title;
+        }
+
+        // 提取消耗金瓜子与电池
+        const rawGold = Number(item.gold || item.coin || item.price || item.cost) || 0;
+        const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
+
+        // 提取爆出奖励 / 掉落 / 盲盒产物
+        let reward = item.reward || item.hit_desc || item.box_reward || item.ext_desc || '';
+        if (!reward && (item.ext || title)) {
+          const fullDesc = `${title} ${item.ext || ''}`;
+          const mReward = fullDesc.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
+          if (mReward) reward = mReward[0];
+        }
+
+        // 时间格式化
+        let timeStr = item.ctime || item.time || '';
+        let timestamp = Date.now();
+        if (typeof timeStr === 'number') {
+          timestamp = timeStr * 1000;
+          timeStr = new Date(timestamp).toLocaleString();
+        } else if (/^\d+$/.test(timeStr)) {
+          const num = parseInt(timeStr);
+          timestamp = num > 1e11 ? num : num * 1000;
+          timeStr = new Date(timestamp).toLocaleString();
+        }
+
+        const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
+
+        resultList.push({
+          id: String(item.order_id || item.id || `order_${timestamp}_${Math.random()}`),
+          time: timeStr,
+          timestamp,
+          targetName: targetName || '当前主播',
+          roomId: item.room_id || 0,
+          giftName: giftName || '直播礼物',
+          giftNum: Number(item.gift_num) || 1,
+          battery,
+          gold: rawGold || (battery * 100),
+          reward: reward || (hasReward ? reward : '普通赠送'),
+          hasReward,
+          source: '🏛 官方账单'
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('拉取官方 order/recordList 异常:', err);
+  }
+
+  // 3. 备用接口: 若第一步未拉取到官方数据，尝试 pay/v1/Exchange/recordList
+  if (resultList.filter(r => r.source === '🏛 官方账单').length === 0) {
+    try {
+      const payRes = await fetchWithAccount(
+        account,
+        `https://api.live.bilibili.com/pay/v1/Exchange/recordList?page=${page}&page_size=${pageSize}&t=${Date.now()}`,
+        { headers: { 'Accept': 'application/json' }, timeout: 8000 }
+      );
+      if (payRes && payRes.code === 0 && payRes.data && Array.isArray(payRes.data.list)) {
+        payRes.data.list.forEach(item => {
+          const rawGold = Number(item.gold || item.cost) || 0;
+          const battery = Math.floor(rawGold / 100);
+          const timeStr = item.time || item.ctime || new Date().toLocaleString();
+          let targetName = item.uname || item.target_name || '';
+          let giftName = item.gift_name || item.title || '礼物';
+          if (!targetName && item.title) {
+            const m = item.title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
+            if (m) targetName = m[1];
+          }
+
+          resultList.push({
+            id: String(item.id || `pay_${Date.now()}_${Math.random()}`),
+            time: timeStr,
+            timestamp: Date.now(),
+            targetName: targetName || '主播',
+            roomId: item.room_id || 0,
+            giftName,
+            giftNum: 1,
+            battery,
+            gold: rawGold,
+            reward: item.reward || '普通赠送',
+            hasReward: !!item.reward,
+            source: '🏛 瓜子流水'
+          });
+        });
+      }
+    } catch (_) {}
+  }
+
+  // 4. 按特征去重并按时间倒序排列
+  const uniqueMap = new Map();
+  resultList.forEach(item => {
+    const key = `${item.targetName}_${item.giftName}_${item.time}_${item.giftNum}_${item.battery}`;
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, item);
+    }
+  });
+
+  const sortedList = Array.from(uniqueMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+
+  return {
+    success: true,
+    list: sortedList,
+    total: sortedList.length
+  };
 }
 
 /**
@@ -1445,9 +1671,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           roomDetails.anchorUid,
           request.giftId,
           request.price ?? 0,
-          request.giftNum ?? 1
+          request.giftNum ?? 1,
+          request.giftName ?? ''
         );
         return res;
+      }
+
+      case 'GET_GIFT_HISTORY': {
+        const res = await fetchGiftHistory(request);
+        return res;
+      }
+
+      case 'RECORD_GIFT_LOG': {
+        if (request.logItem) {
+          await appendLocalGiftLog(request.logItem);
+        }
+        return { success: true };
       }
 
       case 'TRIGGER_AUTO_FOLLOW_DANMAKU': {
