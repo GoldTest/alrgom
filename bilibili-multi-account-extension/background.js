@@ -37,21 +37,50 @@ class AsyncLock {
 
 const requestLock = new AsyncLock();
 
+let cachedDeviceCookies = null;
+
+/**
+ * 获取浏览器当前 .bilibili.com 域下的设备指纹 Cookie，防止微服务网关报 NullClient
+ */
+async function getDeviceCookies() {
+  if (cachedDeviceCookies) return cachedDeviceCookies;
+  try {
+    const list = await chrome.cookies.getAll({ domain: '.bilibili.com' });
+    const dict = {};
+    list.forEach(c => {
+      if (['buvid3', 'buvid4', 'b_nut', '_uuid', 'buvid_fp'].includes(c.name)) {
+        dict[c.name] = c.value;
+      }
+    });
+    if (dict.buvid3) cachedDeviceCookies = dict;
+    return dict;
+  } catch (_) {
+    return {};
+  }
+}
+
 /**
  * 设置当前请求的 Session Cookie (通过 declarativeNetRequest)
  */
 async function setTargetCookieRule(account, targetUrl = '') {
+  const devCookies = await getDeviceCookies();
   const cookieParts = [
     `SESSDATA=${account.sessdata}`,
     `bili_jct=${account.bili_jct}`,
     `DedeUserID=${account.dedeUserId || account.mid}`,
     `DedeUserID__ckMd5=${account.dedeUserId_ckMd5 || ''}`
   ];
+
+  if (devCookies.buvid3) cookieParts.push(`buvid3=${devCookies.buvid3}`);
+  if (devCookies.buvid4) cookieParts.push(`buvid4=${devCookies.buvid4}`);
+  if (devCookies.b_nut) cookieParts.push(`b_nut=${devCookies.b_nut}`);
+  if (devCookies._uuid) cookieParts.push(`_uuid=${devCookies._uuid}`);
+
   const cookieStr = cookieParts.join('; ');
 
-  const isLive = typeof targetUrl === 'string' && targetUrl.includes('live.bilibili.com');
-  const origin = isLive ? 'https://live.bilibili.com' : 'https://www.bilibili.com';
-  const referer = isLive ? 'https://live.bilibili.com/' : 'https://www.bilibili.com';
+  const isLive = typeof targetUrl === 'string' && (targetUrl.includes('live.bilibili.com') || targetUrl.includes('link.bilibili.com'));
+  const origin = isLive ? 'https://link.bilibili.com' : 'https://www.bilibili.com';
+  const referer = isLive ? 'https://link.bilibili.com/p/center/index' : 'https://www.bilibili.com';
 
   await chrome.declarativeNetRequest.updateSessionRules({
     removeRuleIds: [DNR_RULE_ID],
@@ -973,84 +1002,7 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
     } catch (_) {}
   }
 
-  // ── 核心接口 1: 官方粉丝勋章投喂面板 (100%存在，已成功探测到勋章数据) ──
-  const medalPanelProbe = await probeApi(
-    '勋章投喂',
-    `https://api.live.bilibili.com/xlive/app-ucenter/v1/fansMedal/panel?page=${page}&page_size=${pageSize}&t=${Date.now()}`
-  );
-  if (medalPanelProbe.ok && medalPanelProbe.raw?.data) {
-    const medalData = medalPanelProbe.raw.data;
-    const medalList = extractList(medalData.list || medalData.special_list || medalData.items || medalData);
-    medalList.forEach((mItem, idx) => {
-      // 全面兼容多版本字段结构
-      const anchorName = mItem.target_name || mItem.anchor_name || mItem.anchor_info?.nick_name || mItem.uname || `主播_${mItem.target_id || idx}`;
-      const medalName = mItem.medal_name || mItem.medal_info?.medal_name || '粉丝勋章';
-      const level = Number(mItem.level || mItem.medal_info?.level || 1);
-      const todayFeed = Number(mItem.today_feed || mItem.todayFeed || mItem.medal_info?.today_feed || 0);
-      const totalScore = Number(mItem.score || mItem.intimacy || mItem.medal_info?.intimacy || mItem.medal_info?.score || 0);
-      const mRoomId = mItem.room_info?.room_id || mItem.roomId || mItem.room_id || 0;
-
-      // 只要持有该主播粉丝勋章，即证明存在真实送礼办牌或打赏记录，100% 收录展示
-      const estBattery = todayFeed > 0 ? Math.ceil(todayFeed / 10) : (totalScore > 0 ? Math.ceil(totalScore / 10) : 1);
-      const hasToday = todayFeed > 0;
-
-      resultList.push({
-        id: `medal_${mItem.medal_id || mItem.target_id || idx}_${Date.now()}`,
-        time: hasToday ? '今日送礼投喂' : `已佩戴 LV.${level} 粉丝牌`,
-        timestamp: hasToday ? Date.now() - idx * 1000 : Date.now() - 86400000 - idx * 1000,
-        targetName: `【${medalName}】${anchorName}`,
-        roomId: mRoomId,
-        giftName: hasToday ? `今日勋章打赏 (+${todayFeed}亲密度)` : `粉丝打赏 (勋章LV.${level})`,
-        giftNum: 1,
-        battery: estBattery,
-        gold: estBattery * 100,
-        reward: hasToday
-          ? `✨ 今日亲密度投喂: +${todayFeed} 点 (累计 ${totalScore} 点)`
-          : `🏅 勋章等级 LV.${level}${totalScore > 0 ? ` (累计亲密度: ${totalScore} 点)` : ''}`,
-        hasReward: hasToday || level >= 5,
-        source: '🏅 勋章送礼'
-      });
-    });
-  }
-
-  // ── 核心接口 2: 当前直播间高能送礼贡献榜 (改用经过验证的官方真实路由) ──
-  if (realRoomId && anchorUid) {
-    let topListProbe = await probeApi(
-      '高能榜单',
-      `https://api.live.bilibili.com/rankdb/v1/Rank2018/getTopList?roomid=${realRoomId}&ruid=${anchorUid}`
-    );
-    if (!topListProbe.ok) {
-      topListProbe = await probeApi(
-        '贡献榜单',
-        `https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank?ruid=${anchorUid}&room_id=${realRoomId}&page=1&pageSize=50`
-      );
-    }
-    if (topListProbe.ok && topListProbe.raw?.data) {
-      const topList = extractList(topListProbe.raw.data.list || topListProbe.raw.data);
-      const myRankItem = topList.find(t => String(t.uid) === String(account.mid));
-      if (myRankItem) {
-        const score = Number(myRankItem.score || myRankItem.gold || 0);
-        const rank = myRankItem.rank || myRankItem.user_rank || '在榜';
-        const battery = Math.floor(score / 100);
-        resultList.push({
-          id: `room_rank_${realRoomId}_${account.mid}`,
-          time: '本场直播中',
-          timestamp: Date.now() + 5000,
-          targetName: `当前主播(房间 ${realRoomId})`,
-          roomId: realRoomId,
-          giftName: '当前房间高能送礼',
-          giftNum: 1,
-          battery,
-          gold: score,
-          reward: `✨ 房间送礼贡献: 第 ${rank} 名 (共 ${score} 瓜子)`,
-          hasReward: true,
-          source: '🏆 房间榜单'
-        });
-      }
-    }
-  }
-
-  // ── 接口 3: 经典金瓜子消费流水账单 (补充 platform=pc 与客户端环境头，解决 NullClient 拦截) ──
+  // ── 核心接口 1: 官方金瓜子与电池送礼流水账单 (真金白银电池礼物消费明细) ──
   const clientHeaders = {
     'Accept': 'application/json',
     'Referer': 'https://link.bilibili.com/p/center/index',
@@ -1086,6 +1038,88 @@ async function fetchGiftHistory({ mid, roomId = '', page = 1, pageSize = 20 }) {
         body: postBody.toString()
       }
     );
+  }
+
+  if (payProbe.ok) {
+    payProbe.items.forEach(item => {
+      const title = item.title || item.type_name || item.desc || item.name || '';
+      let targetName = item.uname || item.target_name || item.anchor_name || '';
+      if (!targetName && title) {
+        const m = title.match(/赠送(?:主播)?\s*[【「]?([^】」\[\]\s]+)[】」]?/);
+        if (m) targetName = m[1];
+      }
+
+      let giftName = item.gift_name || '';
+      if (!giftName && title) {
+        const m = title.match(/礼物\s*[【「]?([^】」\s]+)[】」]?/);
+        if (m) giftName = m[1];
+        else giftName = title;
+      }
+
+      const rawGold = Number(item.gold || item.coin || item.cost || item.price) || 0;
+      const battery = item.battery !== undefined ? Number(item.battery) : Math.floor(rawGold / 100);
+      const { timeStr, timestamp } = normalizeTimestamp(item.time || item.ctime);
+
+      let reward = item.reward || item.hit_desc || item.ext_desc || '';
+      if (!reward && (item.ext || title)) {
+        const m = `${title} ${item.ext || ''}`.match(/(?:爆出|掉落|中奖|获得)\s*[【「]?([^】」，。\n]+)[】」]?/);
+        if (m) reward = m[0];
+      }
+
+      const hasReward = !!(reward && reward !== '无' && !reward.includes('普通'));
+
+      resultList.push({
+        id: String(item.id || item.order_id || `pay_${timestamp}_${Math.random()}`),
+        time: timeStr,
+        timestamp,
+        targetName: targetName || '当前主播',
+        roomId: item.room_id || 0,
+        giftName: giftName || '直播礼物',
+        giftNum: Number(item.gift_num || item.num) || 1,
+        battery,
+        gold: rawGold || (battery * 100),
+        reward: reward || (hasReward ? reward : '电池送礼'),
+        hasReward,
+        source: '🏛 瓜子账单'
+      });
+    });
+  }
+
+  // ── 核心接口 2: 当前直播间高能送礼贡献榜 (返回本场直播所有贡献礼物的真实记录) ──
+  if (realRoomId && anchorUid) {
+    let topListProbe = await probeApi(
+      '高能榜单',
+      `https://api.live.bilibili.com/rankdb/v1/Rank2018/getTopList?roomid=${realRoomId}&ruid=${anchorUid}`
+    );
+    if (!topListProbe.ok) {
+      topListProbe = await probeApi(
+        '贡献榜单',
+        `https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank?ruid=${anchorUid}&room_id=${realRoomId}&page=1&pageSize=50`
+      );
+    }
+    if (topListProbe.ok && topListProbe.raw?.data) {
+      const topList = extractList(topListProbe.raw.data.list || topListProbe.raw.data);
+      const myRankItem = topList.find(t => String(t.uid) === String(account.mid));
+      if (myRankItem) {
+        const score = Number(myRankItem.score || myRankItem.gold || 0);
+        const rank = myRankItem.rank || myRankItem.user_rank || '在榜';
+        const battery = Math.floor(score / 100);
+        resultList.push({
+          id: `room_rank_${realRoomId}_${account.mid}`,
+          time: '本场直播中',
+          timestamp: Date.now() + 5000,
+          targetName: `当前主播(房间 ${realRoomId})`,
+          roomId: realRoomId,
+          giftName: '当前房间高能送礼',
+          giftNum: 1,
+          battery,
+          gold: score,
+          reward: `✨ 房间送礼贡献: 第 ${rank} 名 (共 ${score} 瓜子)`,
+          hasReward: true,
+          source: '🏆 房间榜单'
+        });
+      }
+    }
   }
 
   if (payProbe.ok) {
