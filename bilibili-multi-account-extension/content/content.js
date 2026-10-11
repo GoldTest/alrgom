@@ -113,9 +113,9 @@
     .widget-panel {
       position: fixed;
       right: 20px;
-      bottom: 120px;
+      bottom: 80px;
       width: 295px;
-      max-height: 88vh;
+      max-height: calc(100vh - 90px);
       background: #ffffff;
       border-radius: 14px;
       box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -220,7 +220,7 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      max-height: 76vh;
+      max-height: calc(100vh - 140px);
       overflow-y: auto;
     }
 
@@ -337,7 +337,7 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-      max-height: 250px;
+      max-height: 62vh;
       overflow-y: auto;
       padding-right: 2px;
     }
@@ -618,7 +618,7 @@
       margin-top: 2px;
       border: 1px solid #ffe7ba;
       animation: drawerFade 0.15s ease;
-      max-height: 220px;
+      max-height: 420px;
     }
 
     /* 礼物分类 Tab 栏 */
@@ -694,7 +694,7 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
-      max-height: 155px;
+      max-height: 320px;
       overflow-y: auto;
       padding-right: 2px;
     }
