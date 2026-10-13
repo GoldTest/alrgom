@@ -273,6 +273,26 @@
             上次同步：<span id="gist-last-sync-time">暂无记录</span>
           </div>
 
+          <!-- 同步配置选项 -->
+          <div class="gist-options-group">
+            <div class="gist-option-row">
+              <div class="gist-option-info">
+                <span class="gist-option-title">上传搜索历史</span>
+                <span class="gist-option-desc">将本地搜索记录同步至云端 Gist</span>
+              </div>
+              <label class="switch-toggle" title="是否上传搜索历史">
+                <input type="checkbox" id="toggle-sync-history" />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+            <div class="gist-auto-tip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+              <span>标签页、引擎选择及历史记录变更后自动上传至 Gist</span>
+            </div>
+          </div>
+
           <div class="settings-btn-row">
             <button class="sub-btn btn-primary-soft" id="btn-gist-push" title="将当前电脑配置推送到云端">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">

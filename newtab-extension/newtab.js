@@ -152,15 +152,19 @@ const enginePicker = document.getElementById('engine-picker');
 const searchInput  = document.getElementById('search-input');
 const searchSubmit = document.getElementById('search-submit');
 
-function applyEngine(key) {
+function applyEngine(key, shouldSync = true) {
   const e = ENGINES[key] || ENGINES.google;
+  const prevEngine = currentEngine;
   currentEngine = key in ENGINES ? key : 'google';
   engineIcon.innerHTML = e.svg;
   engineBtn.title = `当前搜索引擎：${e.name}（点击切换）`;
   localStorage.setItem('lumina-engine', currentEngine);
+  if (shouldSync && prevEngine !== currentEngine) {
+    triggerAutoUpload('engine_change');
+  }
 }
 
-applyEngine(currentEngine);
+applyEngine(currentEngine, false);
 
 // 点击引擎按钮：切换显示/隐藏，阻止事件继续冒泡
 engineBtn.addEventListener('click', (ev) => {
@@ -241,9 +245,12 @@ function loadHistory() {
   }
 }
 
-function saveHistory(list) {
+function saveHistory(list, shouldSync = true) {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    if (shouldSync && isSyncHistoryEnabled()) {
+      triggerAutoUpload('history_change');
+    }
   } catch {
     // 隐私模式等场景下 localStorage 可能不可用，静默降级为仅本次会话有效
   }
@@ -408,8 +415,11 @@ function loadShortcuts() {
   } catch { return DEFAULT_SHORTCUTS; }
 }
 
-function saveShortcuts(list) {
+function saveShortcuts(list, shouldSync = true) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  if (shouldSync) {
+    triggerAutoUpload('shortcuts_change');
+  }
 }
 
 /* ════════════════════════════════
@@ -1157,14 +1167,16 @@ if (settingsOverlay) {
   });
 }
 
-const GITHUB_CLIENT_ID   = 'Ov23li99f675EYLij8cq';
-const GIST_TOKEN_KEY     = 'lumina-gist-token';
-const GIST_ID_KEY        = 'lumina-gist-id';
-const GIST_SYNC_TIME_KEY = 'lumina-gist-sync-time';
-const GIST_USER_KEY      = 'lumina-gist-user';
-const GIST_FILENAME      = 'lumina-newtab-backup.json';
+const GITHUB_CLIENT_ID       = 'Ov23li99f675EYLij8cq';
+const GIST_TOKEN_KEY         = 'lumina-gist-token';
+const GIST_ID_KEY            = 'lumina-gist-id';
+const GIST_SYNC_TIME_KEY     = 'lumina-gist-sync-time';
+const GIST_USER_KEY          = 'lumina-gist-user';
+const GIST_SYNC_HISTORY_KEY  = 'lumina-gist-sync-history';
+const GIST_FILENAME          = 'lumina-newtab-backup.json';
 
 let deviceAuthPollTimer  = null;
+let autoUploadTimer      = null;
 
 const gistStatusBadge    = document.getElementById('gist-status-badge');
 const gistUnauthView     = document.getElementById('gist-unauth-view');
@@ -1179,9 +1191,98 @@ const gistUserAvatar     = document.getElementById('gist-user-avatar');
 const gistUserName       = document.getElementById('gist-user-name');
 const gistLinkedDesc     = document.getElementById('gist-linked-desc');
 const gistLastSyncTime   = document.getElementById('gist-last-sync-time');
+const toggleSyncHistory  = document.getElementById('toggle-sync-history');
 const btnGistPush        = document.getElementById('btn-gist-push');
 const btnGistPull        = document.getElementById('btn-gist-pull');
 const btnGistDisconnect  = document.getElementById('btn-gist-disconnect');
+
+// 历史记录同步开关状态
+function isSyncHistoryEnabled() {
+  return localStorage.getItem(GIST_SYNC_HISTORY_KEY) === 'true';
+}
+
+function setSyncHistoryEnabled(enabled) {
+  localStorage.setItem(GIST_SYNC_HISTORY_KEY, enabled ? 'true' : 'false');
+}
+
+// 统一构建 Gist 云端备份 Payload（包含快捷方式、当前搜索引擎、按开关包含的搜索历史）
+function buildGistPayload() {
+  const payload = {
+    app: 'Lumina New Tab',
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    shortcuts: loadShortcuts(),
+    engine: currentEngine
+  };
+  if (isSyncHistoryEnabled()) {
+    payload.history = loadHistory();
+  }
+  return payload;
+}
+
+// 防抖自动触发上传到 Gist
+function triggerAutoUpload(reason = '') {
+  const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+  if (!token) return;
+
+  if (autoUploadTimer) clearTimeout(autoUploadTimer);
+  autoUploadTimer = setTimeout(() => {
+    performGistPush({ silent: true, isAuto: true });
+  }, 1000);
+}
+
+// 执行推送到云端 Gist 的核心函数（支持手动推送与后台自动同步）
+async function performGistPush({ silent = false, isAuto = false } = {}) {
+  const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+  let gistId = localStorage.getItem(GIST_ID_KEY) || '';
+
+  if (!token) {
+    if (!silent) showToast('未连接 GitHub 账号', '⚠️');
+    return;
+  }
+
+  const payload = buildGistPayload();
+
+  try {
+    if (!gistId) {
+      gistId = await findExistingLuminaGist(token);
+      if (!gistId) {
+        gistId = await createLuminaGist(token, payload);
+      }
+      localStorage.setItem(GIST_ID_KEY, gistId);
+    }
+
+    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'PATCH',
+      headers: getGitHubHeaders(token),
+      body: JSON.stringify({
+        description: 'Lumina New Tab 跨设备云端同步数据',
+        files: {
+          [GIST_FILENAME]: {
+            content: JSON.stringify(payload, null, 2)
+          }
+        }
+      })
+    });
+
+    if (res.status === 401) throw new Error('Token 无效或已过期，请重新登录');
+    if (res.status === 404) throw new Error('Gist 不存在，请断开后重新连接');
+    if (!res.ok) throw new Error(`推送失败 (${res.status})`);
+
+    localStorage.setItem(GIST_SYNC_TIME_KEY, payload.updatedAt);
+    updateGistUIState();
+    if (!silent) {
+      showToast('已成功推送到云端！', '☁️');
+    } else if (isAuto) {
+      showToast('标签页已自动同步至云端', '☁️');
+    }
+  } catch (err) {
+    console.error('推送失败:', err);
+    if (!silent) {
+      showToast(err.message || '网络异常，推送失败', '❌');
+    }
+  }
+}
 
 // Toast 组件
 const toastEl   = document.getElementById('toast');
@@ -1331,11 +1432,20 @@ async function pullFromGistDirect(token, gistId) {
     throw new Error('云端备份数据损坏');
   }
 
-  saveShortcuts(cloudPayload.shortcuts);
-  if (cloudPayload.engine && cloudPayload.engine in ENGINES) {
-    applyEngine(cloudPayload.engine);
-  }
+  // 1. 应用标签页快捷方式（不触发反向自动同步）
+  saveShortcuts(cloudPayload.shortcuts, false);
   renderShortcuts();
+
+  // 2. 应用搜索引擎设置（不触发反向自动同步）
+  if (cloudPayload.engine && cloudPayload.engine in ENGINES) {
+    applyEngine(cloudPayload.engine, false);
+  }
+
+  // 3. 应用搜索历史（若开启了历史上传/同步且云端有历史数据）
+  if (isSyncHistoryEnabled() && Array.isArray(cloudPayload.history)) {
+    saveHistory(cloudPayload.history, false);
+    renderHistory();
+  }
 
   const syncTime = cloudPayload.updatedAt || new Date().toISOString();
   localStorage.setItem(GIST_SYNC_TIME_KEY, syncTime);
@@ -1375,13 +1485,7 @@ async function handleLoginSuccess(token) {
       showToast(`欢迎回来 @${userData.login}！已自动同步云端标签页`, '☁️');
     } else {
       // 首次使用 -> 自动在后台创建私有 Gist
-      const payload = {
-        app: 'Lumina New Tab',
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        shortcuts: loadShortcuts(),
-        engine: currentEngine
-      };
+      const payload = buildGistPayload();
       gistId = await createLuminaGist(token, payload);
       localStorage.setItem(GIST_ID_KEY, gistId);
       localStorage.setItem(GIST_SYNC_TIME_KEY, payload.updatedAt);
@@ -1566,62 +1670,28 @@ function initGistSync() {
     });
   }
 
+  // 搜索历史上传开关初始化与监听
+  if (toggleSyncHistory) {
+    toggleSyncHistory.checked = isSyncHistoryEnabled();
+    toggleSyncHistory.addEventListener('change', () => {
+      const enabled = toggleSyncHistory.checked;
+      setSyncHistoryEnabled(enabled);
+      showToast(enabled ? '已开启搜索历史上传' : '已关闭搜索历史上传', '⚙️');
+      // 开关变更后立即触发一次自动同步以更新云端
+      triggerAutoUpload('history_toggle');
+    });
+  }
+
   // 手动推送到云端
   if (btnGistPush) {
     btnGistPush.addEventListener('click', async () => {
-      const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
-      let gistId = localStorage.getItem(GIST_ID_KEY) || '';
-
-      if (!token) {
-        showToast('未连接 GitHub 账号', '⚠️');
-        return;
-      }
-
       btnGistPush.disabled = true;
       const span = btnGistPush.querySelector('span');
       const origText = span ? span.textContent : '推送到云端 (上传)';
       if (span) span.textContent = '正在推送…';
 
       try {
-        const payload = {
-          app: 'Lumina New Tab',
-          version: 1,
-          updatedAt: new Date().toISOString(),
-          shortcuts: loadShortcuts(),
-          engine: currentEngine
-        };
-
-        if (!gistId) {
-          gistId = await findExistingLuminaGist(token);
-          if (!gistId) {
-            gistId = await createLuminaGist(token, payload);
-          }
-          localStorage.setItem(GIST_ID_KEY, gistId);
-        }
-
-        const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-          method: 'PATCH',
-          headers: getGitHubHeaders(token),
-          body: JSON.stringify({
-            description: 'Lumina New Tab 跨设备云端同步数据',
-            files: {
-              [GIST_FILENAME]: {
-                content: JSON.stringify(payload, null, 2)
-              }
-            }
-          })
-        });
-
-        if (res.status === 401) throw new Error('Token 无效或已过期，请重新登录');
-        if (res.status === 404) throw new Error('Gist 不存在，请断开后重新连接');
-        if (!res.ok) throw new Error(`推送失败 (${res.status})`);
-
-        localStorage.setItem(GIST_SYNC_TIME_KEY, payload.updatedAt);
-        updateGistUIState();
-        showToast('已成功推送到云端！', '☁️');
-      } catch (err) {
-        console.error('推送失败:', err);
-        showToast(err.message || '网络异常，推送失败', '❌');
+        await performGistPush({ silent: false, isAuto: false });
       } finally {
         btnGistPush.disabled = false;
         if (span) span.textContent = origText;
@@ -1678,7 +1748,8 @@ if (btnExportBackup) {
         exportedAt: new Date().toISOString(),
         data: {
           shortcuts: loadShortcuts(),
-          engine: currentEngine
+          engine: currentEngine,
+          history: isSyncHistoryEnabled() ? loadHistory() : undefined
         }
       };
 
@@ -1788,6 +1859,15 @@ if (btnImportBackup && importFileInput) {
 
         if (importedEngine && importedEngine in ENGINES) {
           applyEngine(importedEngine);
+        }
+
+        // 若备份中包含搜索历史且当前开启了历史同步，同步恢复
+        const importedHistory = Array.isArray(parsed.data?.history)
+          ? parsed.data.history
+          : (Array.isArray(parsed.history) ? parsed.history : null);
+        if (importedHistory && isSyncHistoryEnabled()) {
+          saveHistory(importedHistory);
+          renderHistory();
         }
 
         closeSettingsModal();
