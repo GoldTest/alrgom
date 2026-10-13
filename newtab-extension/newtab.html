@@ -214,25 +214,86 @@
         <button class="settings-close-btn" id="settings-close" title="关闭">&times;</button>
       </div>
 
-      <!-- 云同步卡片 -->
-      <div class="settings-section glass-subcard">
+      <!-- GitHub Gist 云端同步卡片 -->
+      <div class="settings-section glass-subcard gist-sync-section">
         <div class="settings-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/>
           </svg>
-          <span>云端账号同步</span>
-          <span class="sync-badge" id="sync-status-badge">已启用</span>
+          <span>GitHub 云端同步</span>
+          <span class="sync-badge unconfigured" id="gist-status-badge">未连接</span>
         </div>
-        <p class="settings-desc" id="sync-provider-desc">
-          基于浏览器账号（Microsoft Edge / Google Chrome）原生同步服务，数据随您的浏览器账号跨设备自动实时同步。
-        </p>
-        <div class="settings-btn-row">
-          <button class="sub-btn" id="btn-sync-now">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-            </svg>
-            <span>立即同步云端</span>
-          </button>
+
+        <!-- 状态 1：未连接视图 -->
+        <div id="gist-unauth-view" class="gist-view-pane">
+          <p class="settings-desc">
+            无需手动配置 Token 或 Gist ID。点击登录并授权后，插件将<strong>全自动检索已有同步或创建私有 Gist</strong>，跨设备真正零复制、零粘贴。
+          </p>
+
+          <div class="settings-btn-row">
+            <button class="sub-btn btn-github-login" id="btn-github-login">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/>
+              </svg>
+              <span>使用 GitHub 账号登录</span>
+            </button>
+          </div>
+
+          <!-- 设备码授权提示盒（发起登录后展开） -->
+          <div class="gist-device-box" id="gist-device-box" hidden>
+            <div class="gist-device-header">
+              <span class="gist-pulse-dot"></span>
+              <span>已打开 GitHub 授权页面，请核对验证码：</span>
+            </div>
+            <div class="gist-code-badge">
+              <span class="gist-code-text" id="gist-code-text">---- - ----</span>
+              <button type="button" class="sub-btn btn-code-copy" id="btn-copy-code" title="复制验证码">复制</button>
+            </div>
+            <p class="gist-device-tip">页面若未自动聚焦，请粘贴上述验证码并点击 <strong>Continue → Authorize</strong>。插件将在授权后自动完成关联。</p>
+            <div class="settings-btn-row">
+              <button type="button" class="sub-btn btn-danger-soft" id="btn-cancel-auth">取消授权</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 状态 2：已连接视图 -->
+        <div id="gist-authed-view" class="gist-view-pane" hidden>
+          <div class="gist-user-card">
+            <img class="gist-user-avatar" id="gist-user-avatar" src="" alt="avatar" />
+            <div class="gist-user-meta">
+              <div class="gist-user-name-row">
+                <span class="gist-user-name" id="gist-user-name">GitHub User</span>
+                <span class="gist-user-badge">已授权</span>
+              </div>
+              <div class="gist-linked-info" id="gist-linked-desc">已自动关联云端数据</div>
+            </div>
+          </div>
+
+          <div class="gist-sync-info">
+            上次同步：<span id="gist-last-sync-time">暂无记录</span>
+          </div>
+
+          <div class="settings-btn-row">
+            <button class="sub-btn btn-primary-soft" id="btn-gist-push" title="将当前电脑配置推送到云端">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span>推送到云端 (上传)</span>
+            </button>
+            <button class="sub-btn" id="btn-gist-pull" title="从云端获取最新配置覆盖本地">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span>从云端拉取 (下载)</span>
+            </button>
+            <button class="sub-btn btn-danger-soft" id="btn-gist-disconnect" title="清除账号凭证并断开同步">
+              <span>断开连接</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -152,15 +152,12 @@ const enginePicker = document.getElementById('engine-picker');
 const searchInput  = document.getElementById('search-input');
 const searchSubmit = document.getElementById('search-submit');
 
-function applyEngine(key, syncToCloud = true) {
+function applyEngine(key) {
   const e = ENGINES[key] || ENGINES.google;
   currentEngine = key in ENGINES ? key : 'google';
   engineIcon.innerHTML = e.svg;
   engineBtn.title = `当前搜索引擎：${e.name}（点击切换）`;
   localStorage.setItem('lumina-engine', currentEngine);
-  if (syncToCloud && typeof chrome !== 'undefined' && chrome.storage?.sync) {
-    chrome.storage.sync.set({ 'lumina-engine': currentEngine });
-  }
 }
 
 applyEngine(currentEngine);
@@ -411,74 +408,9 @@ function loadShortcuts() {
   } catch { return DEFAULT_SHORTCUTS; }
 }
 
-function saveShortcuts(list, syncToCloud = true) {
+function saveShortcuts(list) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  if (syncToCloud && typeof chrome !== 'undefined' && chrome.storage?.sync) {
-    chrome.storage.sync.set({ [STORAGE_KEY]: list });
-  }
 }
-
-/**
- * 云端同步引擎初始化（兼容 Microsoft Edge 微软账号与 Chrome 谷歌账号）
- */
-function initSyncStorage() {
-  if (typeof chrome === 'undefined' || !chrome.storage?.sync) return;
-
-  chrome.storage.sync.get([STORAGE_KEY, 'lumina-engine'], (res) => {
-    let shouldRerender = false;
-
-    // 同步快捷方式
-    if (res && res[STORAGE_KEY] && Array.isArray(res[STORAGE_KEY])) {
-      const localRaw = localStorage.getItem(STORAGE_KEY);
-      const cloudRaw = JSON.stringify(res[STORAGE_KEY]);
-      if (localRaw !== cloudRaw) {
-        localStorage.setItem(STORAGE_KEY, cloudRaw);
-        shouldRerender = true;
-      }
-    } else {
-      // 云端尚无数据：上传本地当前数据到云端
-      const localList = loadShortcuts();
-      chrome.storage.sync.set({ [STORAGE_KEY]: localList });
-    }
-
-    // 同步搜索引擎
-    if (res && res['lumina-engine'] && res['lumina-engine'] in ENGINES) {
-      if (res['lumina-engine'] !== currentEngine) {
-        applyEngine(res['lumina-engine'], false);
-      }
-    } else {
-      chrome.storage.sync.set({ 'lumina-engine': currentEngine });
-    }
-
-    if (shouldRerender) {
-      renderShortcuts();
-    }
-  });
-
-  // 监听远程设备或同账号其他窗口的同步更新
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'sync') return;
-
-    if (changes[STORAGE_KEY]) {
-      const newList = changes[STORAGE_KEY].newValue;
-      if (Array.isArray(newList)) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
-        renderShortcuts();
-        showToast('已同步来自云端的快捷方式', '☁️');
-      }
-    }
-
-    if (changes['lumina-engine']) {
-      const newEng = changes['lumina-engine'].newValue;
-      if (newEng && newEng in ENGINES) {
-        applyEngine(newEng, false);
-        showToast('已同步搜索引擎设置', '☁️');
-      }
-    }
-  });
-}
-
-initSyncStorage();
 
 /* ════════════════════════════════
    ICON FETCH AND CACHE LOGIC
@@ -1203,13 +1135,53 @@ document.addEventListener('keydown', (e) => {
 const settingsBtn       = document.getElementById('settings-btn');
 const settingsOverlay   = document.getElementById('settings-overlay');
 const settingsClose     = document.getElementById('settings-close');
-const btnSyncNow        = document.getElementById('btn-sync-now');
 const btnExportBackup   = document.getElementById('btn-export-backup');
 const btnImportBackup   = document.getElementById('btn-import-backup');
 const importFileInput   = document.getElementById('import-file-input');
 const btnResetDefault   = document.getElementById('btn-reset-default');
-const syncStatusBadge   = document.getElementById('sync-status-badge');
-const syncProviderDesc  = document.getElementById('sync-provider-desc');
+
+function openSettingsModal() {
+  if (settingsOverlay) settingsOverlay.hidden = false;
+  updateGistUIState();
+}
+
+function closeSettingsModal() {
+  if (settingsOverlay) settingsOverlay.hidden = true;
+}
+
+if (settingsBtn)     settingsBtn.addEventListener('click', openSettingsModal);
+if (settingsClose)   settingsClose.addEventListener('click', closeSettingsModal);
+if (settingsOverlay) {
+  settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) closeSettingsModal();
+  });
+}
+
+const GITHUB_CLIENT_ID   = 'Ov23li99f675EYLij8cq';
+const GIST_TOKEN_KEY     = 'lumina-gist-token';
+const GIST_ID_KEY        = 'lumina-gist-id';
+const GIST_SYNC_TIME_KEY = 'lumina-gist-sync-time';
+const GIST_USER_KEY      = 'lumina-gist-user';
+const GIST_FILENAME      = 'lumina-newtab-backup.json';
+
+let deviceAuthPollTimer  = null;
+
+const gistStatusBadge    = document.getElementById('gist-status-badge');
+const gistUnauthView     = document.getElementById('gist-unauth-view');
+const gistAuthedView     = document.getElementById('gist-authed-view');
+const btnGitHubLogin     = document.getElementById('btn-github-login');
+const gistDeviceBox      = document.getElementById('gist-device-box');
+const gistCodeText       = document.getElementById('gist-code-text');
+const btnCopyCode        = document.getElementById('btn-copy-code');
+const btnCancelAuth      = document.getElementById('btn-cancel-auth');
+
+const gistUserAvatar     = document.getElementById('gist-user-avatar');
+const gistUserName       = document.getElementById('gist-user-name');
+const gistLinkedDesc     = document.getElementById('gist-linked-desc');
+const gistLastSyncTime   = document.getElementById('gist-last-sync-time');
+const btnGistPush        = document.getElementById('btn-gist-push');
+const btnGistPull        = document.getElementById('btn-gist-pull');
+const btnGistDisconnect  = document.getElementById('btn-gist-disconnect');
 
 // Toast 组件
 const toastEl   = document.getElementById('toast');
@@ -1226,68 +1198,475 @@ function showToast(message, icon = '✓') {
   toastTimer = setTimeout(() => {
     toastEl.hidden = true;
     toastTimer = null;
-  }, 2400);
+  }, 2800);
 }
 
-// 识别 Microsoft Edge 浏览器与设置环境描述
-function initSettingsEnvironment() {
-  const isEdge = /Edg\//i.test(navigator.userAgent);
-  if (isEdge) {
-    if (syncStatusBadge) syncStatusBadge.textContent = 'Microsoft 账号已连接';
-    if (syncProviderDesc) {
-      syncProviderDesc.innerHTML = '已检测到 <strong>Microsoft Edge</strong> 浏览器，数据通过您的 <strong>Microsoft 微软账号</strong> 云端跨设备自动无缝同步。';
+// 格式化时间显示
+function formatDateTime(dateInput) {
+  if (!dateInput) return '暂无记录';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '暂无记录';
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+  return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+}
+
+// 更新 GitHub Gist 状态与视图呈现
+function updateGistUIState() {
+  const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+  const userStr = localStorage.getItem(GIST_USER_KEY) || '';
+  const gistId = localStorage.getItem(GIST_ID_KEY) || '';
+  const lastSync = localStorage.getItem(GIST_SYNC_TIME_KEY) || '';
+
+  if (token && userStr) {
+    let user = {};
+    try { user = JSON.parse(userStr); } catch {}
+
+    if (gistUnauthView) gistUnauthView.hidden = true;
+    if (gistAuthedView) gistAuthedView.hidden = false;
+
+    if (gistStatusBadge) {
+      gistStatusBadge.textContent = '已连接';
+      gistStatusBadge.className = 'sync-badge ready';
+    }
+
+    if (gistUserAvatar) {
+      gistUserAvatar.src = user.avatar_url || 'icons/icon48.svg';
+    }
+    if (gistUserName) {
+      gistUserName.textContent = user.name ? `${user.name} (@${user.login})` : `@${user.login || 'GitHub User'}`;
+    }
+    if (gistLinkedDesc) {
+      gistLinkedDesc.textContent = gistId ? `云端 Gist ID: ${gistId.slice(0, 8)}... (自动同步)` : '就绪 (待创建云端存储)';
+    }
+    if (gistLastSyncTime) {
+      gistLastSyncTime.textContent = formatDateTime(lastSync);
     }
   } else {
-    if (syncStatusBadge) syncStatusBadge.textContent = '云端同步已连接';
-    if (syncProviderDesc) {
-      syncProviderDesc.innerHTML = '基于当前浏览器账号原生同步服务，数据随您的浏览器账号跨设备自动实时同步。';
+    if (gistUnauthView) gistUnauthView.hidden = false;
+    if (gistAuthedView) gistAuthedView.hidden = true;
+    if (gistDeviceBox) gistDeviceBox.hidden = true;
+
+    if (gistStatusBadge) {
+      gistStatusBadge.textContent = '未连接';
+      gistStatusBadge.className = 'sync-badge unconfigured';
+    }
+    if (btnGitHubLogin) {
+      btnGitHubLogin.disabled = false;
+      const span = btnGitHubLogin.querySelector('span');
+      if (span) span.textContent = '使用 GitHub 账号登录';
     }
   }
 }
 
-initSettingsEnvironment();
-
-function openSettingsModal() {
-  settingsOverlay.hidden = false;
+// 通用 GitHub API Headers
+function getGitHubHeaders(token) {
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Content-Type': 'application/json'
+  };
 }
 
-function closeSettingsModal() {
-  settingsOverlay.hidden = true;
-}
-
-if (settingsBtn)     settingsBtn.addEventListener('click', openSettingsModal);
-if (settingsClose)   settingsClose.addEventListener('click', closeSettingsModal);
-if (settingsOverlay) {
-  settingsOverlay.addEventListener('click', (e) => {
-    if (e.target === settingsOverlay) closeSettingsModal();
+// 自动在用户的 Gist 列表中检索是否已有包含 lumina-newtab-backup.json 的 Gist
+async function findExistingLuminaGist(token) {
+  const res = await fetch('https://api.github.com/gists?per_page=100', {
+    headers: getGitHubHeaders(token)
   });
-}
+  if (!res.ok) throw new Error(`获取 Gist 列表失败 (${res.status})`);
+  const gists = await res.json();
+  if (!Array.isArray(gists)) return null;
 
-// 立即手动同步云端
-if (btnSyncNow) {
-  btnSyncNow.addEventListener('click', () => {
-    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
-      btnSyncNow.disabled = true;
-      const span = btnSyncNow.querySelector('span');
-      if (span) span.textContent = '正在同步…';
-
-      // 将本地数据推送到云端并拉取最新
-      const localShortcuts = loadShortcuts();
-      chrome.storage.sync.set({
-        [STORAGE_KEY]: localShortcuts,
-        'lumina-engine': currentEngine
-      }, () => {
-        setTimeout(() => {
-          btnSyncNow.disabled = false;
-          if (span) span.textContent = '立即同步云端';
-          showToast('云端数据同步成功！', '☁️');
-        }, 400);
-      });
-    } else {
-      showToast('本地缓存已刷新', '✓');
+  for (const g of gists) {
+    if (g.files && g.files[GIST_FILENAME]) {
+      return g.id;
     }
-  });
+  }
+  return null;
 }
+
+// 创建新的私有 Gist
+async function createLuminaGist(token, payload) {
+  const res = await fetch('https://api.github.com/gists', {
+    method: 'POST',
+    headers: getGitHubHeaders(token),
+    body: JSON.stringify({
+      description: 'Lumina New Tab 跨设备云端同步数据',
+      public: false,
+      files: {
+        [GIST_FILENAME]: {
+          content: JSON.stringify(payload, null, 2)
+        }
+      }
+    })
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.message || `创建 Gist 失败 (${res.status})`);
+  }
+  const data = await res.json();
+  return data.id;
+}
+
+// 从指定 Gist 拉取并应用数据
+async function pullFromGistDirect(token, gistId) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    headers: getGitHubHeaders(token)
+  });
+  if (!res.ok) throw new Error(`拉取 Gist 失败 (${res.status})`);
+
+  const data = await res.json();
+  const fileObj = data.files && data.files[GIST_FILENAME];
+  if (!fileObj || !fileObj.content) {
+    throw new Error('未找到有效的同步数据文件');
+  }
+
+  const cloudPayload = JSON.parse(fileObj.content);
+  if (!cloudPayload || !Array.isArray(cloudPayload.shortcuts)) {
+    throw new Error('云端备份数据损坏');
+  }
+
+  saveShortcuts(cloudPayload.shortcuts);
+  if (cloudPayload.engine && cloudPayload.engine in ENGINES) {
+    applyEngine(cloudPayload.engine);
+  }
+  renderShortcuts();
+
+  const syncTime = cloudPayload.updatedAt || new Date().toISOString();
+  localStorage.setItem(GIST_SYNC_TIME_KEY, syncTime);
+  return syncTime;
+}
+
+// 登录成功后的全自动化处理：查用户信息、查已有 Gist、自动拉取或自动新建
+async function handleLoginSuccess(token) {
+  if (deviceAuthPollTimer) {
+    clearInterval(deviceAuthPollTimer);
+    deviceAuthPollTimer = null;
+  }
+
+  try {
+    // 1. 获取用户信息
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: getGitHubHeaders(token)
+    });
+    if (!userRes.ok) throw new Error(`获取用户信息失败 (${userRes.status})`);
+    const userData = await userRes.json();
+    const userSave = {
+      login: userData.login,
+      avatar_url: userData.avatar_url,
+      name: userData.name || userData.login
+    };
+
+    localStorage.setItem(GIST_TOKEN_KEY, token);
+    localStorage.setItem(GIST_USER_KEY, JSON.stringify(userSave));
+
+    // 2. 自动检查云端是否已存在 Gist 同步数据
+    let gistId = await findExistingLuminaGist(token);
+
+    if (gistId) {
+      // 已有云端数据 -> 直接绑定并拉取覆盖本地，完成同步
+      localStorage.setItem(GIST_ID_KEY, gistId);
+      await pullFromGistDirect(token, gistId);
+      showToast(`欢迎回来 @${userData.login}！已自动同步云端标签页`, '☁️');
+    } else {
+      // 首次使用 -> 自动在后台创建私有 Gist
+      const payload = {
+        app: 'Lumina New Tab',
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        shortcuts: loadShortcuts(),
+        engine: currentEngine
+      };
+      gistId = await createLuminaGist(token, payload);
+      localStorage.setItem(GIST_ID_KEY, gistId);
+      localStorage.setItem(GIST_SYNC_TIME_KEY, payload.updatedAt);
+      showToast(`欢迎 @${userData.login}！已自动创建私有云端 Gist`, '☁️');
+    }
+
+    updateGistUIState();
+  } catch (err) {
+    console.error('初始化登录云端数据失败:', err);
+    showToast(err.message || '网络连接异常', '❌');
+    updateGistUIState();
+  }
+}
+
+// 轮询换取 Access Token
+function pollDeviceToken(deviceCode, intervalSec, deadline) {
+  if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
+
+  let currentInterval = Math.max(intervalSec, 5) * 1000;
+
+  const checkToken = async () => {
+    if (Date.now() > deadline) {
+      clearInterval(deviceAuthPollTimer);
+      deviceAuthPollTimer = null;
+      showToast('授权超时，请重试', '⚠️');
+      updateGistUIState();
+      return;
+    }
+
+    try {
+      const res = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client_id: GITHUB_CLIENT_ID,
+          device_code: deviceCode,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (data.access_token) {
+        clearInterval(deviceAuthPollTimer);
+        deviceAuthPollTimer = null;
+        await handleLoginSuccess(data.access_token);
+        return;
+      }
+
+      if (data.error === 'authorization_pending') {
+        // 用户仍在授权页面操作，继续等待
+        return;
+      }
+
+      if (data.error === 'slow_down') {
+        currentInterval += 5000;
+        clearInterval(deviceAuthPollTimer);
+        deviceAuthPollTimer = setInterval(checkToken, currentInterval);
+        return;
+      }
+
+      if (data.error === 'expired_token') {
+        clearInterval(deviceAuthPollTimer);
+        deviceAuthPollTimer = null;
+        showToast('授权码已过期，请重新登录', '⚠️');
+        updateGistUIState();
+        return;
+      }
+
+      if (data.error === 'access_denied') {
+        clearInterval(deviceAuthPollTimer);
+        deviceAuthPollTimer = null;
+        showToast('已取消授权', '✕');
+        updateGistUIState();
+        return;
+      }
+    } catch (err) {
+      console.warn('轮询授权状态异常:', err);
+    }
+  };
+
+  deviceAuthPollTimer = setInterval(checkToken, currentInterval);
+}
+
+// 初始化 GitHub Gist 同步模块
+function initGistSync() {
+  updateGistUIState();
+
+  // 点击“使用 GitHub 账号登录”
+  if (btnGitHubLogin) {
+    btnGitHubLogin.addEventListener('click', async () => {
+      btnGitHubLogin.disabled = true;
+      const span = btnGitHubLogin.querySelector('span');
+      if (span) span.textContent = '正在发起授权请求…';
+
+      try {
+        const res = await fetch('https://github.com/login/device/code', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            client_id: GITHUB_CLIENT_ID,
+            scope: 'gist'
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error_description || errData.error || `请求失败 (${res.status})`);
+        }
+
+        const data = await res.json();
+        const { device_code, user_code, verification_uri, expires_in, interval } = data;
+
+        // 自动复制验证码到剪贴板，方便用户在打开的网页直接粘贴
+        try {
+          await navigator.clipboard.writeText(user_code);
+          showToast(`验证码 ${user_code} 已复制！`, '📋');
+        } catch {}
+
+        if (gistCodeText) gistCodeText.textContent = user_code;
+        if (gistDeviceBox) gistDeviceBox.hidden = false;
+        if (span) span.textContent = '等待网页端授权确认…';
+
+        // 自动打开 GitHub 官方授权页面
+        window.open(verification_uri, '_blank');
+
+        // 开始轮询换取 Access Token
+        const deadline = Date.now() + (expires_in || 900) * 1000;
+        pollDeviceToken(device_code, interval || 5, deadline);
+      } catch (err) {
+        console.error('发起 Device Flow 失败:', err);
+        showToast(err.message || '网络异常，发起登录失败', '❌');
+        btnGitHubLogin.disabled = false;
+        if (span) span.textContent = '使用 GitHub 账号登录';
+      }
+    });
+  }
+
+  // 复制验证码按钮
+  if (btnCopyCode && gistCodeText) {
+    btnCopyCode.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(gistCodeText.textContent.trim());
+        showToast('验证码已复制', '📋');
+      } catch {
+        showToast('复制失败，请手动选取', '⚠️');
+      }
+    });
+  }
+
+  // 取消授权
+  if (btnCancelAuth) {
+    btnCancelAuth.addEventListener('click', () => {
+      if (deviceAuthPollTimer) {
+        clearInterval(deviceAuthPollTimer);
+        deviceAuthPollTimer = null;
+      }
+      updateGistUIState();
+      showToast('已取消授权', '✓');
+    });
+  }
+
+  // 断开 GitHub 连接
+  if (btnGistDisconnect) {
+    btnGistDisconnect.addEventListener('click', () => {
+      const ok = confirm('确定要断开与 GitHub 账号的连接吗？\n本地快捷方式不受影响，但将停止云端同步。');
+      if (!ok) return;
+
+      localStorage.removeItem(GIST_TOKEN_KEY);
+      localStorage.removeItem(GIST_USER_KEY);
+      localStorage.removeItem(GIST_ID_KEY);
+      localStorage.removeItem(GIST_SYNC_TIME_KEY);
+
+      updateGistUIState();
+      showToast('已断开连接', '✓');
+    });
+  }
+
+  // 手动推送到云端
+  if (btnGistPush) {
+    btnGistPush.addEventListener('click', async () => {
+      const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+      let gistId = localStorage.getItem(GIST_ID_KEY) || '';
+
+      if (!token) {
+        showToast('未连接 GitHub 账号', '⚠️');
+        return;
+      }
+
+      btnGistPush.disabled = true;
+      const span = btnGistPush.querySelector('span');
+      const origText = span ? span.textContent : '推送到云端 (上传)';
+      if (span) span.textContent = '正在推送…';
+
+      try {
+        const payload = {
+          app: 'Lumina New Tab',
+          version: 1,
+          updatedAt: new Date().toISOString(),
+          shortcuts: loadShortcuts(),
+          engine: currentEngine
+        };
+
+        if (!gistId) {
+          gistId = await findExistingLuminaGist(token);
+          if (!gistId) {
+            gistId = await createLuminaGist(token, payload);
+          }
+          localStorage.setItem(GIST_ID_KEY, gistId);
+        }
+
+        const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+          method: 'PATCH',
+          headers: getGitHubHeaders(token),
+          body: JSON.stringify({
+            description: 'Lumina New Tab 跨设备云端同步数据',
+            files: {
+              [GIST_FILENAME]: {
+                content: JSON.stringify(payload, null, 2)
+              }
+            }
+          })
+        });
+
+        if (res.status === 401) throw new Error('Token 无效或已过期，请重新登录');
+        if (res.status === 404) throw new Error('Gist 不存在，请断开后重新连接');
+        if (!res.ok) throw new Error(`推送失败 (${res.status})`);
+
+        localStorage.setItem(GIST_SYNC_TIME_KEY, payload.updatedAt);
+        updateGistUIState();
+        showToast('已成功推送到云端！', '☁️');
+      } catch (err) {
+        console.error('推送失败:', err);
+        showToast(err.message || '网络异常，推送失败', '❌');
+      } finally {
+        btnGistPush.disabled = false;
+        if (span) span.textContent = origText;
+      }
+    });
+  }
+
+  // 手动从云端拉取
+  if (btnGistPull) {
+    btnGistPull.addEventListener('click', async () => {
+      const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+      let gistId = localStorage.getItem(GIST_ID_KEY) || '';
+
+      if (!token) {
+        showToast('未连接 GitHub 账号', '⚠️');
+        return;
+      }
+
+      btnGistPull.disabled = true;
+      const span = btnGistPull.querySelector('span');
+      const origText = span ? span.textContent : '从云端拉取 (下载)';
+      if (span) span.textContent = '正在拉取…';
+
+      try {
+        if (!gistId) {
+          gistId = await findExistingLuminaGist(token);
+          if (!gistId) throw new Error('云端暂无可同步的备份数据');
+          localStorage.setItem(GIST_ID_KEY, gistId);
+        }
+
+        await pullFromGistDirect(token, gistId);
+        updateGistUIState();
+        showToast('已从云端拉取并应用最新数据！', '✓');
+      } catch (err) {
+        console.error('拉取失败:', err);
+        showToast(err.message || '网络异常，拉取失败', '❌');
+      } finally {
+        btnGistPull.disabled = false;
+        if (span) span.textContent = origText;
+      }
+    });
+  }
+}
+
+initGistSync();
 
 // 导出本地 JSON 备份文件
 if (btnExportBackup) {

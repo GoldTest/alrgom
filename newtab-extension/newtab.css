@@ -889,6 +889,246 @@ html, body {
   color: #fff;
 }
 
+/* ── GitHub Gist 同步组件样式 ── */
+.gist-sync-section {
+  gap: 12px;
+}
+.gist-view-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gist-view-pane[hidden] {
+  display: none !important;
+}
+
+.btn-github-login {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.btn-github-login:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+/* 设备码授权卡片 */
+.gist-device-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: var(--radius-md);
+  animation: fade-in 0.2s ease;
+}
+.gist-device-box[hidden] {
+  display: none !important;
+}
+
+.gist-device-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.gist-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: pulse-ring 1.5s infinite;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.8; }
+}
+
+.gist-code-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed rgba(167, 139, 250, 0.5);
+  border-radius: var(--radius-sm);
+}
+.gist-code-text {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #c4b5fd;
+  user-select: all;
+}
+.btn-code-copy {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.gist-device-tip {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* 已授权用户卡片 */
+.gist-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+}
+.gist-user-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+  object-fit: cover;
+}
+.gist-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+.gist-user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gist-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.gist-user-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.gist-linked-info {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gist-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gist-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gist-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.settings-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.gist-input-wrapper .settings-input {
+  padding-right: 36px;
+}
+.settings-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.2);
+}
+.settings-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+}
+.gist-eye-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition);
+}
+.gist-eye-btn:hover {
+  color: #fff;
+}
+.gist-sync-info {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+}
+.gist-sync-info span {
+  color: rgba(255, 255, 255, 0.85);
+  font-family: monospace;
+}
+.btn-primary-soft {
+  background: rgba(167, 139, 250, 0.2);
+  border-color: rgba(167, 139, 250, 0.4);
+  color: #d8b4fe;
+}
+.btn-primary-soft:hover {
+  background: rgba(167, 139, 250, 0.35);
+  border-color: rgba(167, 139, 250, 0.6);
+  color: #fff;
+}
+.sync-badge.ready {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.sync-badge.unconfigured {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
 /* ── Toast 浮动提示 ── */
 .toast {
   position: fixed;
