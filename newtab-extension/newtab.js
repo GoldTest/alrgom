@@ -1169,6 +1169,8 @@ if (settingsOverlay) {
 
 const GITHUB_CLIENT_ID       = 'Ov23li99f675EYLij8cq';
 const GIST_TOKEN_KEY         = 'lumina-gist-token';
+const GIST_REFRESH_TOKEN_KEY = 'lumina-gist-refresh-token';
+const GIST_TOKEN_EXPIRES_KEY = 'lumina-gist-token-expires';
 const GIST_ID_KEY            = 'lumina-gist-id';
 const GIST_SYNC_TIME_KEY     = 'lumina-gist-sync-time';
 const GIST_USER_KEY          = 'lumina-gist-user';
@@ -1245,16 +1247,15 @@ async function performGistPush({ silent = false, isAuto = false } = {}) {
 
   try {
     if (!gistId) {
-      gistId = await findExistingLuminaGist(token);
+      gistId = await findExistingLuminaGist();
       if (!gistId) {
-        gistId = await createLuminaGist(token, payload);
+        gistId = await createLuminaGist(payload);
       }
       localStorage.setItem(GIST_ID_KEY, gistId);
     }
 
-    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    const res = await fetchGitHubApi(`https://api.github.com/gists/${gistId}`, {
       method: 'PATCH',
-      headers: getGitHubHeaders(token),
       body: JSON.stringify({
         description: 'Lumina New Tab 跨设备云端同步数据',
         files: {
@@ -1374,11 +1375,102 @@ function getGitHubHeaders(token) {
   };
 }
 
+// 刷新 GitHub Access Token（利用 Refresh Token 无感续期，6个月内有效）
+let isRefreshingPromise = null;
+async function refreshGistToken() {
+  if (isRefreshingPromise) return isRefreshingPromise;
+
+  isRefreshingPromise = (async () => {
+    const refreshToken = localStorage.getItem(GIST_REFRESH_TOKEN_KEY);
+    if (!refreshToken) return null;
+
+    try {
+      const res = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client_id: GITHUB_CLIENT_ID,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        })
+      });
+
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => ({}));
+      if (data.access_token) {
+        localStorage.setItem(GIST_TOKEN_KEY, data.access_token);
+        if (data.refresh_token) {
+          localStorage.setItem(GIST_REFRESH_TOKEN_KEY, data.refresh_token);
+        }
+        if (data.expires_in) {
+          const expiresAt = Date.now() + Number(data.expires_in) * 1000;
+          localStorage.setItem(GIST_TOKEN_EXPIRES_KEY, String(expiresAt));
+        }
+        return data.access_token;
+      }
+    } catch (err) {
+      console.warn('刷新 GitHub Token 失败:', err);
+    }
+    return null;
+  })();
+
+  try {
+    return await isRefreshingPromise;
+  } finally {
+    isRefreshingPromise = null;
+  }
+}
+
+// 获取有效的 Gist Access Token（若临近过期且有 Refresh Token 则提前自动刷新）
+async function getValidGistToken() {
+  const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+  if (!token) return '';
+
+  const expiresStr = localStorage.getItem(GIST_TOKEN_EXPIRES_KEY);
+  const refreshToken = localStorage.getItem(GIST_REFRESH_TOKEN_KEY);
+
+  // 若存在过期时间与 refresh_token，且距离过期不足 5 分钟，则提前静默刷新
+  if (expiresStr && refreshToken) {
+    const expiresAt = Number(expiresStr);
+    if (!isNaN(expiresAt) && Date.now() > (expiresAt - 5 * 60 * 1000)) {
+      const refreshed = await refreshGistToken();
+      if (refreshed) return refreshed;
+    }
+  }
+
+  return token;
+}
+
+// 统一封装 GitHub API 请求（支持 401 时自动换取 Token 并静默重试一次）
+async function fetchGitHubApi(url, options = {}) {
+  let token = await getValidGistToken();
+  if (!token) throw new Error('未连接 GitHub 账号');
+
+  const headers = {
+    ...getGitHubHeaders(token),
+    ...(options.headers || {})
+  };
+
+  let res = await fetch(url, { ...options, headers });
+
+  // 遇到 401 Unauthorized 且有 refresh_token 时，自动尝试刷新并重试
+  if (res.status === 401 && localStorage.getItem(GIST_REFRESH_TOKEN_KEY)) {
+    const newToken = await refreshGistToken();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      res = await fetch(url, { ...options, headers });
+    }
+  }
+
+  return res;
+}
+
 // 自动在用户的 Gist 列表中检索是否已有包含 lumina-newtab-backup.json 的 Gist
-async function findExistingLuminaGist(token) {
-  const res = await fetch('https://api.github.com/gists?per_page=100', {
-    headers: getGitHubHeaders(token)
-  });
+async function findExistingLuminaGist() {
+  const res = await fetchGitHubApi('https://api.github.com/gists?per_page=100');
   if (!res.ok) throw new Error(`获取 Gist 列表失败 (${res.status})`);
   const gists = await res.json();
   if (!Array.isArray(gists)) return null;
@@ -1392,10 +1484,9 @@ async function findExistingLuminaGist(token) {
 }
 
 // 创建新的私有 Gist
-async function createLuminaGist(token, payload) {
-  const res = await fetch('https://api.github.com/gists', {
+async function createLuminaGist(payload) {
+  const res = await fetchGitHubApi('https://api.github.com/gists', {
     method: 'POST',
-    headers: getGitHubHeaders(token),
     body: JSON.stringify({
       description: 'Lumina New Tab 跨设备云端同步数据',
       public: false,
@@ -1415,10 +1506,9 @@ async function createLuminaGist(token, payload) {
 }
 
 // 从指定 Gist 拉取并应用数据
-async function pullFromGistDirect(token, gistId) {
-  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-    headers: getGitHubHeaders(token)
-  });
+async function pullFromGistDirect(gistId) {
+  const res = await fetchGitHubApi(`https://api.github.com/gists/${gistId}`);
+  if (res.status === 401) throw new Error('Token 无效或已过期，请重新登录');
   if (!res.ok) throw new Error(`拉取 Gist 失败 (${res.status})`);
 
   const data = await res.json();
@@ -1453,10 +1543,20 @@ async function pullFromGistDirect(token, gistId) {
 }
 
 // 登录成功后的全自动化处理：查用户信息、查已有 Gist、自动拉取或自动新建
-async function handleLoginSuccess(token) {
+async function handleLoginSuccess(authData) {
   if (deviceAuthPollTimer) {
     clearInterval(deviceAuthPollTimer);
     deviceAuthPollTimer = null;
+  }
+
+  const token = typeof authData === 'string' ? authData : (authData && authData.access_token);
+  const refreshToken = typeof authData === 'object' && authData ? authData.refresh_token : null;
+  const expiresIn = typeof authData === 'object' && authData ? authData.expires_in : null;
+
+  if (!token) {
+    showToast('登录返回数据异常', '❌');
+    updateGistUIState();
+    return;
   }
 
   try {
@@ -1473,20 +1573,31 @@ async function handleLoginSuccess(token) {
     };
 
     localStorage.setItem(GIST_TOKEN_KEY, token);
+    if (refreshToken) {
+      localStorage.setItem(GIST_REFRESH_TOKEN_KEY, refreshToken);
+    } else {
+      localStorage.removeItem(GIST_REFRESH_TOKEN_KEY);
+    }
+    if (expiresIn) {
+      const expiresAt = Date.now() + Number(expiresIn) * 1000;
+      localStorage.setItem(GIST_TOKEN_EXPIRES_KEY, String(expiresAt));
+    } else {
+      localStorage.removeItem(GIST_TOKEN_EXPIRES_KEY);
+    }
     localStorage.setItem(GIST_USER_KEY, JSON.stringify(userSave));
 
     // 2. 自动检查云端是否已存在 Gist 同步数据
-    let gistId = await findExistingLuminaGist(token);
+    let gistId = await findExistingLuminaGist();
 
     if (gistId) {
       // 已有云端数据 -> 直接绑定并拉取覆盖本地，完成同步
       localStorage.setItem(GIST_ID_KEY, gistId);
-      await pullFromGistDirect(token, gistId);
+      await pullFromGistDirect(gistId);
       showToast(`欢迎回来 @${userData.login}！已自动同步云端标签页`, '☁️');
     } else {
       // 首次使用 -> 自动在后台创建私有 Gist
       const payload = buildGistPayload();
-      gistId = await createLuminaGist(token, payload);
+      gistId = await createLuminaGist(payload);
       localStorage.setItem(GIST_ID_KEY, gistId);
       localStorage.setItem(GIST_SYNC_TIME_KEY, payload.updatedAt);
       showToast(`欢迎 @${userData.login}！已自动创建私有云端 Gist`, '☁️');
@@ -1534,7 +1645,7 @@ function pollDeviceToken(deviceCode, intervalSec, deadline) {
       if (data.access_token) {
         clearInterval(deviceAuthPollTimer);
         deviceAuthPollTimer = null;
-        await handleLoginSuccess(data.access_token);
+        await handleLoginSuccess(data);
         return;
       }
 
@@ -1661,6 +1772,8 @@ function initGistSync() {
       if (!ok) return;
 
       localStorage.removeItem(GIST_TOKEN_KEY);
+      localStorage.removeItem(GIST_REFRESH_TOKEN_KEY);
+      localStorage.removeItem(GIST_TOKEN_EXPIRES_KEY);
       localStorage.removeItem(GIST_USER_KEY);
       localStorage.removeItem(GIST_ID_KEY);
       localStorage.removeItem(GIST_SYNC_TIME_KEY);
@@ -1717,12 +1830,12 @@ function initGistSync() {
 
       try {
         if (!gistId) {
-          gistId = await findExistingLuminaGist(token);
+          gistId = await findExistingLuminaGist();
           if (!gistId) throw new Error('云端暂无可同步的备份数据');
           localStorage.setItem(GIST_ID_KEY, gistId);
         }
 
-        await pullFromGistDirect(token, gistId);
+        await pullFromGistDirect(gistId);
         updateGistUIState();
         showToast('已从云端拉取并应用最新数据！', '✓');
       } catch (err) {
