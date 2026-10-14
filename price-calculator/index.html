@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>价格便宜度计算器 - 性价比对比工具</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --border-focus: #3b82f6;
+      --success: #16a34a;
+      --success-bg: #f0fdf4;
+      --success-border: #bbf7d0;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --warning: #d97706;
+      --warning-bg: #fffbeb;
+      --neutral-badge: #f1f5f9;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+      --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.08);
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px 16px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .header-title h1 {
+      font-size: 22px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+    }
+
+    .header-title p {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+
+    .btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .btn-danger-text {
+      color: var(--danger);
+      background: transparent;
+      border: none;
+      padding: 4px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .btn-danger-text:hover {
+      background: var(--danger-bg);
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+      overflow: hidden;
+      transition: box-shadow 0.2s ease;
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fcfcfd;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-benchmark {
+      background: #dbeafe;
+      color: #1e40af;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      letter-spacing: 0.5px;
+    }
+
+    .card-body {
+      padding: 20px;
+    }
+
+    /* 表单与输入框 */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      align-items: end;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-field {
+      width: 100%;
+      height: 40px;
+      padding: 8px 12px;
+      font-size: 15px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      background: #ffffff;
+      color: var(--text-main);
+    }
+
+    .input-field:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+
+    .input-unit {
+      position: absolute;
+      right: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .has-unit {
+      padding-right: 48px;
+    }
+
+    /* 标杆单价展示卡 */
+    .benchmark-result {
+      margin-top: 16px;
+      background: #eff6ff;
+      border: 1px dashed #93c5fd;
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .benchmark-stat-label {
+      font-size: 13px;
+      color: #1e40af;
+      font-weight: 500;
+    }
+
+    .benchmark-stat-val {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1d4ed8;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 对比表格/列表 */
+    .table-container {
+      overflow-x: auto;
+    }
+
+    .compare-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      text-align: left;
+    }
+
+    .compare-table th {
+      background: #f8fafc;
+      padding: 12px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1.5px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .compare-table td {
+      padding: 14px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .compare-row {
+      transition: background-color 0.15s ease;
+    }
+
+    .compare-row:hover {
+      background-color: #f8fafc;
+    }
+
+    .compare-row.is-best {
+      background-color: #f0fdf4 !important;
+    }
+
+    .compare-row.is-best td {
+      border-bottom-color: #bbf7d0;
+    }
+
+    /* 状态徽标 */
+    .status-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-tag.cheaper {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid var(--success-border);
+    }
+
+    .status-tag.expensive {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid var(--danger-border);
+    }
+
+    .status-tag.equal {
+      background: var(--neutral-badge);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .crown-tag {
+      background: #fef3c7;
+      color: #b45309;
+      border: 1px solid #fde68a;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .summary-text {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .text-success { color: var(--success); }
+    .text-danger { color: var(--danger); }
+    .text-muted { color: var(--text-muted); }
+
+    .formula-hint {
+      font-size: 11px;
+      color: #94a3b8;
+      display: block;
+      margin-top: 2px;
+    }
+
+    .table-input {
+      width: 100%;
+      min-width: 90px;
+      height: 36px;
+      padding: 6px 10px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+      transition: all 0.15s;
+    }
+
+    .table-input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    }
+
+    /* 底部提示卡 */
+    .tips-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 24px;
+    }
+
+    .tips-box strong {
+      color: var(--text-main);
+    }
+
+    .tips-box ul {
+      margin-left: 18px;
+      margin-top: 8px;
+    }
+
+    .tips-box li {
+      margin-bottom: 4px;
+    }
+
+    @media (max-width: 768px) {
+      .compare-table, .compare-table thead, .compare-table tbody, .compare-table tr, .compare-table td {
+        display: block;
+      }
+
+      .compare-table thead {
+        display: none;
+      }
+
+      .compare-table tr {
+        margin-bottom: 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        background: #ffffff;
+      }
+
+      .compare-table td {
+        border-bottom: 1px dashed var(--border);
+        padding: 8px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .compare-table td:last-child {
+        border-bottom: none;
+        padding-top: 10px;
+        justify-content: flex-end;
+      }
+
+      .compare-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+
+      .table-input {
+        max-width: 180px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 头部区域 -->
+    <header>
+      <div class="header-title">
+        <h1>
+          <span>⚖️</span> 价格便宜度计算器
+        </h1>
+        <p>以基准商品为标杆，自动核算其他规格的单位价格、盈亏金额及赚亏比例</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn" onclick="resetToDefault()" title="恢复最初的示例数据">
+          <span>🔄</span> 重置为默认示例
+        </button>
+        <button class="btn btn-primary" onclick="addRow()">
+          <span>➕</span> 添加对比项
+        </button>
+      </div>
+    </header>
+
+    <!-- 第一行：当前标杆 (Benchmark) -->
+    <div class="card" id="benchmarkCard">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🎯 第一行：当前标杆（基准参数）</span>
+          <span class="badge-benchmark">BENCHMARK</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted);">所有对比项都以此为基准进行盈亏折算</div>
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group" style="grid-column: span 1.5;">
+            <label for="bmName">标杆名称 / 描述</label>
+            <input type="text" id="bmName" class="input-field" value="普通包装（100粒装）" placeholder="如：100电池 / 基础款" oninput="saveAndCalculate()">
+          </div>
+
+          <div class="form-group">
+            <label for="bmQuantity">标杆数量 / 规格</label>
+            <div class="input-wrapper">
+              <input type="number" id="bmQuantity" class="input-field has-unit" value="100" min="0.0001" step="any" placeholder="100" oninput="saveAndCalculate()">
+              <input type="text" id="bmUnit" class="input-unit" style="width: 44px; text-align: center; border: none; background: transparent; pointer-events: auto; outline: none; border-left: 1px solid var(--border);" value="粒" title="点击可修改单位" oninput="saveAndCalculate()">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="bmPrice">标杆总价格</label>
+            <div class="input-wrapper">
+              <input type="number" id="bmPrice" class="input-field has-unit" value="9" min="0.0001" step="any" placeholder="9.00" oninput="saveAndCalculate()">
+              <span class="input-unit">元</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="benchmark-result">
+          <div>
+            <div class="benchmark-stat-label">标杆基准单价</div>
+            <div style="font-size: 12px; color: #3b82f6; margin-top: 2px;">
+              即：每 <span class="unit-text">粒</span> 成本
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div class="benchmark-stat-val" id="bmUnitPriceDisplay">0.0900 元 / 粒</div>
+            <div style="font-size: 12px; color: var(--text-muted);">9.00 元 ÷ 100 粒</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 第二部分：对比项列表 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>📋 其他价格对比列表</span>
+          <span id="bestTagContainer"></span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-sm" onclick="sortRows('cost')">按性价比从优到劣排序</button>
+          <button class="btn btn-sm btn-primary" onclick="addRow()">+ 新增行</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding: 0;">
+        <div class="table-container">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th style="width: 22%;">对比项名称</th>
+                <th style="width: 14%;">数量 / 规格</th>
+                <th style="width: 14%;">总价 (元)</th>
+                <th style="width: 15%;">折算单价</th>
+                <th style="width: 25%;">相对于标杆（便宜度 / 盈亏）</th>
+                <th style="width: 10%; text-align: right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="compareBody">
+              <!-- JS 动态渲染行 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部使用与计算说明卡片 -->
+    <div class="tips-box">
+      <strong>💡 便宜度与盈亏计算公式说明：</strong>
+      <ul>
+        <li><strong>标杆单价</strong> = 标杆总价 ÷ 标杆数量。</li>
+        <li><strong>对比项单价</strong> = 对比项总价 ÷ 对比项数量。</li>
+        <li><strong>单价便宜度（折扣比例）</strong> = (对比单价 - 标杆单价) ÷ 标杆单价 × 100%。若为负值表示更便宜（省钱），若为正值表示更贵（多花钱）。</li>
+        <li><strong>同等规格盈亏金额</strong> = 标杆单价 × 对比数量 - 对比总价。
+          例如以 100个9元 为标杆，买 900个 标杆需花 81元。若实际卖 89元，则<strong>亏了 8.00 元</strong>（多付了 9.88%）；若卖 75元，则<strong>赚了/省了 6.00 元</strong>（省下 7.41%）。
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // 默认数据
+    const DEFAULT_BENCHMARK = {
+      name: "标杆：100粒装电池",
+      quantity: 100,
+      unit: "粒",
+      price: 9
+    };
+
+    const DEFAULT_ITEMS = [
+      { id: "1", name: "大包装批发款（900粒）", quantity: 900, price: 89 },
+      { id: "2", name: "活动特惠版（500粒）", quantity: 500, price: 38 },
+      { id: "3", name: "便携试用装（20粒）", quantity: 20, price: 2.5 }
+    ];
+
+    let benchmark = { ...DEFAULT_BENCHMARK };
+    let compareItems = [...DEFAULT_ITEMS];
+
+    // 初始化加载
+    function init() {
+      const savedBm = localStorage.getItem("price_calc_bm");
+      const savedItems = localStorage.getItem("price_calc_items");
+
+      if (savedBm) {
+        try { benchmark = JSON.parse(savedBm); } catch(e){}
+      }
+      if (savedItems) {
+        try { compareItems = JSON.parse(savedItems); } catch(e){}
+      }
+
+      // 同步 DOM
+      document.getElementById("bmName").value = benchmark.name || "";
+      document.getElementById("bmQuantity").value = benchmark.quantity || 100;
+      document.getElementById("bmUnit").value = benchmark.unit || "个";
+      document.getElementById("bmPrice").value = benchmark.price || 9;
+
+      renderRows();
+      calculate();
+    }
+
+    // 格式化数字
+    function formatNum(num, digits = 4) {
+      if (isNaN(num) || !isFinite(num)) return "0.00";
+      // 去除无效末尾 0，但保留至少 2 位小数
+      const fixed = num.toFixed(digits);
+      return parseFloat(fixed).toString().includes('.') 
+        ? parseFloat(fixed).toFixed(Math.max(2, (fixed.split('.')[1] || '').replace(/0+$/, '').length))
+        : num.toFixed(2);
+    }
+
+    function formatCurrency(num) {
+      if (isNaN(num) || !isFinite(num)) return "0.00";
+      return Math.abs(num).toFixed(2);
+    }
+
+    // 保存并计算
+    function saveAndCalculate() {
+      benchmark.name = document.getElementById("bmName").value.trim();
+      benchmark.quantity = parseFloat(document.getElementById("bmQuantity").value) || 0;
+      benchmark.unit = document.getElementById("bmUnit").value.trim() || "个";
+      benchmark.price = parseFloat(document.getElementById("bmPrice").value) || 0;
+
+      // 更新每行输入框的值到 compareItems
+      compareItems.forEach((item) => {
+        const nameEl = document.getElementById(`name_${item.id}`);
+        const qtyEl = document.getElementById(`qty_${item.id}`);
+        const priceEl = document.getElementById(`price_${item.id}`);
+        if (nameEl) item.name = nameEl.value;
+        if (qtyEl) item.quantity = parseFloat(qtyEl.value) || 0;
+        if (priceEl) item.price = parseFloat(priceEl.value) || 0;
+      });
+
+      localStorage.setItem("price_calc_bm", JSON.stringify(benchmark));
+      localStorage.setItem("price_calc_items", JSON.stringify(compareItems));
+
+      calculate();
+    }
+
+    // 重新计算并渲染分析结果
+    function calculate() {
+      const unit = benchmark.unit || "个";
+      document.querySelectorAll(".unit-text").forEach(el => el.textContent = unit);
+
+      // 计算标杆单价
+      const bmQty = benchmark.quantity;
+      const bmPrice = benchmark.price;
+      const bmUnitPrice = (bmQty > 0 && bmPrice > 0) ? (bmPrice / bmQty) : 0;
+
+      const bmDisplay = document.getElementById("bmUnitPriceDisplay");
+      if (bmUnitPrice > 0) {
+        bmDisplay.textContent = `${formatNum(bmUnitPrice, 4)} 元 / ${unit}`;
+      } else {
+        bmDisplay.textContent = `0.00 元 / ${unit}`;
+      }
+
+      // 计算所有对比项单价，找出最优（单价最低）
+      let minUnitPrice = Infinity;
+      let bestItemId = null;
+
+      const results = compareItems.map(item => {
+        const qty = item.quantity;
+        const price = item.price;
+        const unitPrice = (qty > 0 && price > 0) ? (price / qty) : 0;
+
+        if (unitPrice > 0 && unitPrice < minUnitPrice) {
+          minUnitPrice = unitPrice;
+          bestItemId = item.id;
+        }
+
+        return {
+          id: item.id,
+          unitPrice
+        };
+      });
+
+      // 渲染对比结果列
+      compareItems.forEach(item => {
+        const resEl = document.getElementById(`res_${item.id}`);
+        const unitPriceEl = document.getElementById(`unit_price_${item.id}`);
+        const rowEl = document.getElementById(`row_${item.id}`);
+        if (!resEl || !unitPriceEl || !rowEl) return;
+
+        const qty = item.quantity;
+        const price = item.price;
+        const unitPrice = (qty > 0 && price > 0) ? (price / qty) : 0;
+
+        // 单价展示
+        if (unitPrice > 0) {
+          const isBest = (item.id === bestItemId && compareItems.length > 1 && unitPrice < bmUnitPrice);
+          unitPriceEl.innerHTML = `
+            <strong>${formatNum(unitPrice, 4)}</strong> <span style="font-size:12px; color:var(--text-muted);">元/${unit}</span>
+            ${isBest ? `<span class="crown-tag">👑 最划算</span>` : ''}
+          `;
+          if (isBest) {
+            rowEl.classList.add("is-best");
+          } else {
+            rowEl.classList.remove("is-best");
+          }
+        } else {
+          unitPriceEl.innerHTML = `<span style="color:var(--text-muted);">-</span>`;
+          rowEl.classList.remove("is-best");
+        }
+
+        // 相对于标杆分析
+        if (bmUnitPrice <= 0 || unitPrice <= 0) {
+          resEl.innerHTML = `<span style="color:var(--text-muted); font-size:13px;">请输入有效数量和价格</span>`;
+          return;
+        }
+
+        // 标杆单价买对应数量的理论总价
+        const benchmarkEquivalentPrice = bmUnitPrice * qty;
+        // 差价：正数表示比标杆省了多少钱（赚了），负数表示比标杆多花了多少钱（亏了）
+        const diffAmount = benchmarkEquivalentPrice - price;
+        // 单价差异百分比: (当前单价 - 标杆单价) / 标杆单价 * 100
+        const percentDiff = ((unitPrice - bmUnitPrice) / bmUnitPrice) * 100;
+
+        const diffAbs = Math.abs(diffAmount);
+        const percentAbs = Math.abs(percentDiff).toFixed(2);
+
+        if (Math.abs(percentDiff) < 0.01) {
+          resEl.innerHTML = `
+            <div class="status-tag equal">⚖️ 与标杆持平</div>
+            <div class="formula-hint">单价一致，无盈亏差异</div>
+          `;
+        } else if (unitPrice < bmUnitPrice) {
+          // 更便宜（赚了 / 省了）
+          resEl.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span class="status-tag cheaper">🎉 便宜 ${percentAbs}%</span>
+              <span class="summary-text text-success">省 ${formatCurrency(diffAbs)} 元</span>
+            </div>
+            <div class="formula-hint">
+              买 ${qty}${unit} 标杆需 ${formatCurrency(benchmarkEquivalentPrice)} 元，实付 ${price.toFixed(2)} 元 (单价低 ${(bmUnitPrice - unitPrice).toFixed(4)}元)
+            </div>
+          `;
+        } else {
+          // 更贵（亏了 / 多花了）
+          resEl.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span class="status-tag expensive">⚠️ 贵了 +${percentAbs}%</span>
+              <span class="summary-text text-danger">亏 ${formatCurrency(diffAbs)} 元</span>
+            </div>
+            <div class="formula-hint">
+              买 ${qty}${unit} 标杆仅需 ${formatCurrency(benchmarkEquivalentPrice)} 元，实付多花 ${formatCurrency(diffAbs)} 元
+            </div>
+          `;
+        }
+      });
+    }
+
+    // 渲染表格各行
+    function renderRows() {
+      const tbody = document.getElementById("compareBody");
+      const unit = benchmark.unit || "个";
+
+      tbody.innerHTML = compareItems.map((item, index) => `
+        <tr class="compare-row" id="row_${item.id}">
+          <td data-label="对比项名称">
+            <input type="text" class="table-input" id="name_${item.id}" value="${escapeHtml(item.name)}" placeholder="如：900电池 / 规格B" oninput="saveAndCalculate()">
+          </td>
+          <td data-label="数量 / 规格">
+            <div style="display:flex; align-items:center; gap:4px;">
+              <input type="number" class="table-input" id="qty_${item.id}" value="${item.quantity}" min="0.0001" step="any" placeholder="数量" oninput="saveAndCalculate()">
+              <span style="font-size:12px; color:var(--text-muted); width:20px;">${unit}</span>
+            </div>
+          </td>
+          <td data-label="总价格 (元)">
+            <div style="display:flex; align-items:center; gap:4px;">
+              <input type="number" class="table-input" id="price_${item.id}" value="${item.price}" min="0.0001" step="any" placeholder="价格" oninput="saveAndCalculate()">
+              <span style="font-size:12px; color:var(--text-muted);">元</span>
+            </div>
+          </td>
+          <td data-label="折算单价" id="unit_price_${item.id}">
+            -
+          </td>
+          <td data-label="便宜度 / 盈亏分析" id="res_${item.id}">
+            -
+          </td>
+          <td data-label="操作" style="text-align: right;">
+            <button class="btn-danger-text" onclick="deleteRow('${item.id}')" title="删除该对比项">
+              🗑️ 删除
+            </button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // 添加新对比项
+    function addRow() {
+      const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+      compareItems.push({
+        id: newId,
+        name: `对比项 ${compareItems.length + 1}`,
+        quantity: 100,
+        price: 10
+      });
+      renderRows();
+      saveAndCalculate();
+
+      // 聚焦新添加行的名称输入框
+      setTimeout(() => {
+        const el = document.getElementById(`name_${newId}`);
+        if (el) el.focus();
+      }, 50);
+    }
+
+    // 删除行
+    function deleteRow(id) {
+      if (compareItems.length <= 1) {
+        alert("请至少保留一个对比项进行计算。");
+        return;
+      }
+      compareItems = compareItems.filter(item => item.id !== id);
+      renderRows();
+      saveAndCalculate();
+    }
+
+    // 排序
+    function sortRows(type) {
+      const bmQty = benchmark.quantity || 1;
+      const bmPrice = benchmark.price || 0;
+      const bmUnitPrice = bmQty > 0 ? bmPrice / bmQty : 0;
+
+      compareItems.sort((a, b) => {
+        const uA = (a.quantity > 0 && a.price > 0) ? (a.price / a.quantity) : Infinity;
+        const uB = (b.quantity > 0 && b.price > 0) ? (b.price / b.quantity) : Infinity;
+        return uA - uB; // 单价由低到高（最划算排在最前）
+      });
+
+      renderRows();
+      calculate();
+      localStorage.setItem("price_calc_items", JSON.stringify(compareItems));
+    }
+
+    // 重置为默认示例
+    function resetToDefault() {
+      if (confirm("确定要恢复到默认示例数据吗？当前输入的内容会被覆盖。")) {
+        benchmark = { ...DEFAULT_BENCHMARK };
+        compareItems = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+        localStorage.removeItem("price_calc_bm");
+        localStorage.removeItem("price_calc_items");
+
+        document.getElementById("bmName").value = benchmark.name;
+        document.getElementById("bmQuantity").value = benchmark.quantity;
+        document.getElementById("bmUnit").value = benchmark.unit;
+        document.getElementById("bmPrice").value = benchmark.price;
+
+        renderRows();
+        calculate();
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // 页面启动
+    window.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
