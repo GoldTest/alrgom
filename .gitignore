@@ -3,3 +3,4 @@
 *.pdb
 *.exe
 .DS_Store
+temp_script_check.js

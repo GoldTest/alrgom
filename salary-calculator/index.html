@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人工资计算器 - 全年薪资纵览与月度台账</title>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-light: #e0f2fe;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --border-focus: #38bdf8;
+      --success: #16a34a;
+      --success-bg: #f0fdf4;
+      --success-border: #bbf7d0;
+      --warning: #d97706;
+      --warning-bg: #fffbeb;
+      --warning-border: #fde68a;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+      --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.08);
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 20px 16px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1360px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-title h1 {
+      font-size: 24px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-main);
+    }
+
+    .header-title p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-privacy {
+      background-color: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* 选项卡导航 */
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      background: #f1f5f9;
+      padding: 6px;
+      border-radius: var(--radius);
+      overflow-x: auto;
+    }
+
+    .nav-tab-btn {
+      flex: 1;
+      min-width: 120px;
+      text-align: center;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .nav-tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .nav-tab-btn.active {
+      color: var(--primary);
+      background: #ffffff;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* 按钮 */
+    .btn {
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #ffffff;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-outline {
+      border-color: var(--border);
+      color: var(--text-main);
+    }
+    .btn-outline:hover {
+      background: #f1f5f9;
+    }
+
+    .btn-sm {
+      padding: 3px 8px;
+      font-size: 12px;
+    }
+
+    .btn-danger-outline {
+      color: var(--danger);
+      border-color: var(--danger-border);
+    }
+    .btn-danger-outline:hover {
+      background: var(--danger-bg);
+    }
+
+    /* 卡片通用 */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 10px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2, .grid-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 年度汇总 Hero 区域 */
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 960px) {
+      .hero-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 540px) {
+      .hero-stats {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .hero-stat-card {
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: #ffffff;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .hero-stat-card.primary {
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff;
+      border: none;
+    }
+    .hero-stat-card.primary .label { color: #bae6fd; }
+    .hero-stat-card.primary .val { color: #ffffff; }
+
+    .hero-stat-card .label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .hero-stat-card .val {
+      font-size: 24px;
+      font-weight: 800;
+      margin-top: 4px;
+      letter-spacing: -0.5px;
+    }
+
+    .hero-stat-card .sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* 快速控制工具条 */
+    .year-toolbar {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .year-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* 全年大表格样式 */
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+    }
+
+    table.full-year-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: right;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    table.full-year-table th {
+      background: #f8fafc;
+      padding: 10px 8px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    table.full-year-table th:first-child,
+    table.full-year-table td:first-child {
+      text-align: center;
+    }
+
+    table.full-year-table td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text-main);
+    }
+
+    table.full-year-table tbody tr:hover td {
+      background: #f8fafc;
+    }
+
+    /* 表格内输入框 */
+    .cell-input {
+      width: 90px;
+      padding: 5px 6px;
+      font-size: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      text-align: right;
+      outline: none;
+      transition: all 0.15s;
+      background: #ffffff;
+    }
+
+    .cell-input:focus {
+      border-color: var(--border-focus);
+      background: #f0f9ff;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+    }
+
+    .cell-input-ot {
+      width: 75px;
+    }
+
+    /* 表格底部汇总行 */
+    tr.total-row td {
+      background: #f1f5f9;
+      font-weight: 700;
+      border-top: 2px solid #cbd5e1;
+      border-bottom: none;
+      color: var(--text-main);
+      padding: 12px 8px;
+    }
+
+    /* 状态与税率徽章 */
+    .status-pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .pill-tier-3 { background: #e0f2fe; color: #0284c7; }
+    .pill-tier-10 { background: #fef3c7; color: #b45309; }
+    .pill-tier-20 { background: #fed7aa; color: #c2410c; }
+    .pill-tier-25 { background: #fecdd3; color: #be123c; }
+    .pill-tier-high { background: #fee2e2; color: #b91c1c; }
+
+    /* 全年图表容器 */
+    .chart-box {
+      margin-top: 20px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+    }
+
+    .bars-container {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      height: 190px;
+      padding-top: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .bar-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      justify-content: flex-end;
+      position: relative;
+    }
+
+    .bar-fill {
+      width: 100%;
+      max-width: 44px;
+      background: #38bdf8;
+      border-radius: 4px 4px 0 0;
+      transition: height 0.3s ease;
+      position: relative;
+    }
+
+    .bar-fill:hover {
+      background: var(--primary);
+    }
+
+    .bar-val {
+      position: absolute;
+      top: -22px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .bar-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* 模态框 / 弹窗 */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(2px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      padding: 16px;
+    }
+    .modal-overlay.open {
+      display: flex;
+    }
+    .modal-card {
+      background: #ffffff;
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 680px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+
+    /* 表单组件 */
+    .form-group {
+      margin-bottom: 12px;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .input-addon-left {
+      position: absolute;
+      left: 10px;
+      color: var(--text-muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+    .input-addon-right {
+      position: absolute;
+      right: 10px;
+      color: var(--text-muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+    input[type="number"], select {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: all 0.2s;
+    }
+    .input-has-left { padding-left: 26px !important; }
+    .input-has-right { padding-right: 28px !important; }
+
+    /* 选项卡内容显示/隐藏 */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* 专项扣除网格 */
+    .deduction-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .deduction-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      background: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .deduction-item.active {
+      border-color: var(--primary);
+      background: #f0f9ff;
+    }
+
+    /* 吐司通知框 */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f172a;
+      color: white;
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-md);
+      font-size: 13px;
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 头部信息 -->
+  <header>
+    <div class="header-title">
+      <h1>💰 个人工资计算器 · 全年薪资纵览大表</h1>
+      <p>
+        <span>1~12月全景推演 · 五险一金统一配置 · 各月灵活配置 · 累计预扣个税</span>
+        <span class="badge-privacy">🔒 纯本地离线存储 · 隐私无泄漏</span>
+      </p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-outline" id="exportCsvBtn">
+        📊 导出 CSV 表格
+      </button>
+      <button class="btn btn-outline" id="exportDataBtn">
+        📥 备份 JSON
+      </button>
+    </div>
+  </header>
+
+  <!-- 顶部导航选项卡 -->
+  <nav class="nav-tabs">
+    <button class="nav-tab-btn active" data-tab="tab-overview">
+      📅 1~12月全年薪资纵览
+    </button>
+    <button class="nav-tab-btn" data-tab="tab-overtime">
+      ⏰ 专属加班核算器
+    </button>
+    <button class="nav-tab-btn" data-tab="tab-tax">
+      🏛️ 税务与汇算清缴
+    </button>
+    <button class="nav-tab-btn" data-tab="tab-settings">
+      ⚙️ 五险一金统一配置
+    </button>
+    <button class="nav-tab-btn" data-tab="tab-bonus">
+      🎁 年终奖方案对比
+    </button>
+    <button class="nav-tab-btn" data-tab="tab-data">
+      💾 数据备份与恢复
+    </button>
+  </nav>
+
+  <!-- ======================== TAB 1: 全年薪资纵览大表 (核心主界面) ======================== -->
+  <section id="tab-overview" class="tab-content active">
+    <!-- 年度四大核心统计看板 -->
+    <div class="hero-stats">
+      <div class="hero-stat-card primary">
+        <div>
+          <div class="label">全年累计实际到手总额</div>
+          <div class="val" id="ovStatTotalNet">¥ 0.00</div>
+        </div>
+        <div class="sub" style="color: #bae6fd;">月均实际到手: <span id="ovStatAvgNet">¥ 0.00</span></div>
+      </div>
+
+      <div class="hero-stat-card">
+        <div>
+          <div class="label">全年累计税前总收入</div>
+          <div class="val" id="ovStatTotalGross">¥ 0.00</div>
+        </div>
+        <div class="sub">包含底薪、加班费与各项奖金绩效</div>
+      </div>
+
+      <div class="hero-stat-card" style="border-left: 4px solid var(--danger);">
+        <div>
+          <div class="label" style="color: var(--danger);">全年累计缴纳个人所得税</div>
+          <div class="val" id="ovStatTotalTax" style="color: var(--danger);">¥ 0.00</div>
+        </div>
+        <div class="sub">新个税累计预扣法全年综合纳税额</div>
+      </div>
+
+      <div class="hero-stat-card" style="border-left: 4px solid var(--primary);">
+        <div>
+          <div class="label" style="color: var(--primary);">全年五险一金个人总自付</div>
+          <div class="val" id="ovStatTotalInsurance" style="color: var(--primary);">¥ 0.00</div>
+        </div>
+        <div class="sub">住房公积金全年累积: <span id="ovStatTotalFund" style="font-weight: 600;">¥ 0.00</span></div>
+      </div>
+    </div>
+
+    <!-- 年度快速控制工具条 -->
+    <div class="year-toolbar">
+      <div class="year-toolbar-left">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <label style="font-size: 13px; font-weight: 600;">年份选择:</label>
+          <select id="overviewYearSelect" style="width: 105px; padding: 5px 8px;">
+            <option value="2026">2026 年</option>
+            <option value="2025">2025 年</option>
+            <option value="2027">2027 年</option>
+          </select>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; margin-left: 10px;">
+          <label style="font-size: 13px; font-weight: 600;">基准月薪:</label>
+          <div class="input-wrapper" style="width: 120px;">
+            <span class="input-addon-left">¥</span>
+            <input type="number" id="quickBaseSalaryInput" class="input-has-left" value="16000" style="padding: 5px 6px;">
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnFillAllMonths" title="将基准月薪快速填入1~12月">
+            ⚡ 一键填充全年12个月
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 12px; color: var(--text-muted);">
+          五险一金统一标准: <strong id="quickConfigSummary" style="color: var(--text-main);">基数 15,000 · 公积金 7%</strong>
+        </span>
+        <button type="button" class="btn btn-outline btn-sm" id="btnQuickOpenSettings">
+          ⚙️ 调整统一配置
+        </button>
+      </div>
+    </div>
+
+    <!-- 1~12 月全景纵览大表格 -->
+    <div class="table-container">
+      <table class="full-year-table">
+        <thead>
+          <tr>
+            <th style="width: 70px;">月份</th>
+            <th style="min-width: 105px;">基本工资</th>
+            <th style="min-width: 125px;">加班费</th>
+            <th style="min-width: 95px;">奖励</th>
+            <th style="min-width: 95px;">餐贴车贴</th>
+            <th style="min-width: 100px;">税前应发</th>
+            <th style="min-width: 105px;">五险一金(自付)</th>
+            <th style="min-width: 95px;">专项附加扣除</th>
+            <th style="min-width: 115px;">当年累计应税所得</th>
+            <th style="min-width: 85px; text-align: center;">适用税率</th>
+            <th style="min-width: 95px; color: var(--danger);">当月个税</th>
+            <th style="min-width: 110px; color: var(--success); font-weight: 700;">实发到手</th>
+            <th style="min-width: 100px;">企业总用工</th>
+          </tr>
+        </thead>
+        <tbody id="overviewTableBody">
+          <!-- 动态渲染 1~12 月 -->
+        </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td style="text-align: center;">年度汇总</td>
+            <td id="footBase">¥ 0.00</td>
+            <td id="footOt">¥ 0.00</td>
+            <td id="footBonus">¥ 0.00</td>
+            <td id="footMealTransport">¥ 0.00</td>
+            <td id="footGross">¥ 0.00</td>
+            <td id="footInsurance">¥ 0.00</td>
+            <td id="footSpecial">¥ 0.00</td>
+            <td id="footTaxable">-</td>
+            <td style="text-align: center;">综合</td>
+            <td id="footTax" style="color: var(--danger);">¥ 0.00</td>
+            <td id="footNet" style="color: var(--success); font-size: 14px;">¥ 0.00</td>
+            <td id="footCompany">¥ 0.00</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- 全年到手与税费走势图 -->
+    <div class="chart-box">
+      <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; display: flex; justify-content: space-between;">
+        <span>📈 1~12 月每月实发到手走势 (蓝色柱子) 与扣税变化</span>
+        <span style="font-size: 12px; color: var(--text-muted);">格内数字直接修改，全表毫秒级联动重算</span>
+      </div>
+      <div class="bars-container" id="chartBars">
+        <!-- 动态渲染 12 根柱状图 -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== TAB 2: 加班费核算器 ======================== -->
+  <section id="tab-overtime" class="tab-content">
+    <div class="card" style="border-left: 4px solid var(--primary); background: #f0f9ff; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span style="font-weight: 700; font-size: 15px; color: var(--text-main);">📌 专属加班薪资计算规则</span>
+        <span class="badge-privacy" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">已配置为您指定的标准</span>
+      </div>
+      <div class="grid-2" style="margin-top: 10px; gap: 12px;">
+        <div style="background: #ffffff; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div style="font-weight: 600; font-size: 13px; color: var(--primary); margin-bottom: 4px;">💼 工作日加班 (周一至周五)</div>
+          <div style="font-size: 12px; color: var(--text-main); line-height: 1.6;">
+            • 晚上 <strong>20:30 (8点半)</strong> 开始产生加班费；<br>
+            • 满 20:30 记 <strong>¥ 36</strong> 起步；<br>
+            • 后续每多加 1 小时 <strong>+ ¥ 18</strong>（21:30 为 ¥54，22:30 为 ¥72，23:30 为 ¥90，依此类推）。
+          </div>
+        </div>
+        <div style="background: #ffffff; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+          <div style="font-weight: 600; font-size: 13px; color: #d97706; margin-bottom: 4px;">🏖️ 周末加班 (周六、周日)</div>
+          <div style="font-size: 12px; color: var(--text-main); line-height: 1.6;">
+            • 每满 3 小时 <strong>¥ 25</strong>（满 3 小时为 ¥25，满 6 小时为 ¥50）；<br>
+            • 单日 <strong>¥ 75 封顶</strong>（满 9 小时或全天加班）。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 加班费核算大卡片 -->
+    <div class="hero-stats" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 16px;">
+      <div class="hero-stat-card primary" style="background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);">
+        <div>
+          <div class="label" style="color: #99f6e4;">测算加班费总额</div>
+          <div class="val" id="otResTotal">¥ 0.00</div>
+        </div>
+        <div class="sub" style="color: #ccfbf1;">归属月份: <span id="otTargetMonthBadge" style="font-weight: 700;">2026-10</span></div>
+      </div>
+      <div class="hero-stat-card">
+        <div>
+          <div class="label">工作日加班费小计</div>
+          <div class="val" id="otResWeekday">¥ 0.00</div>
+        </div>
+        <div class="sub">20:30起步36元 · 每小时+18元</div>
+      </div>
+      <div class="hero-stat-card">
+        <div>
+          <div class="label">周末加班费小计</div>
+          <div class="val" id="otResWeekend">¥ 0.00</div>
+        </div>
+        <div class="sub">满3h¥25 · 全天75封顶</div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <label style="font-size: 13px; font-weight: 600;">核算归属月份:</label>
+        <input type="month" id="otMonthPicker" style="width: auto; padding: 4px 8px;">
+      </div>
+      <button type="button" class="btn btn-primary" id="btnApplyOvertimeToTargetMonth">
+        ✨ 将加班费一键填入该月份纵览表 (<span id="otApplyVal">¥ 0.00</span>)
+      </button>
+    </div>
+
+    <!-- 快捷天数录入 -->
+    <div class="card">
+      <div class="card-title">
+        <span>⚡ 各档加班天数快速录入</span>
+        <button type="button" class="btn btn-outline btn-sm" id="btnResetQuickOt">清空天数</button>
+      </div>
+      <div class="grid-2">
+        <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px;">
+          <h4 style="font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 10px;">💼 工作日各档加班天数</h4>
+          <div class="form-group">
+            <label class="form-label">加到 20:30 (满8点半起步 · ¥36/天)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otDay2030" min="0" max="31" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">加到 21:30 (+1小时 · ¥54/天)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otDay2130" min="0" max="31" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">加到 22:30 (+2小时 · ¥72/天)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otDay2230" min="0" max="31" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">加到 23:30 (+3小时 · ¥90/天)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otDay2330" min="0" max="31" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px;">
+          <h4 style="font-size: 13px; font-weight: 700; color: #d97706; margin-bottom: 10px;">🏖️ 周六周天加班天数</h4>
+          <div class="form-group">
+            <label class="form-label">周末加班满 3 小时 (¥25/天)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otWeekend3h" min="0" max="10" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">周末加班满 6 小时 (¥50/天)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otWeekend6h" min="0" max="10" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">周末全天加班 (满9h或全天 · ¥75封顶)</label>
+            <div class="input-wrapper">
+              <input type="number" id="otWeekendFull" min="0" max="10" value="0" class="input-has-right ot-quick-input">
+              <span class="input-addon-right">天</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== TAB 3: 税务与汇算清缴 ======================== -->
+  <section id="tab-tax" class="tab-content">
+    <div class="hero-stats" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="hero-stat-card primary" style="background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);">
+        <div>
+          <div class="label" style="color: #bfdbfe;">年度汇算清缴多退少补</div>
+          <div class="val" id="taxSettleResult" style="font-size: 22px;">-</div>
+        </div>
+        <div class="sub" style="color: #93c5fd;">对应官方个税 APP 3~6月汇算清缴</div>
+      </div>
+      <div class="hero-stat-card">
+        <div>
+          <div class="label">全年应纳个税额 (总账)</div>
+          <div class="val" id="taxSettleTotalDue">¥ 0.00</div>
+        </div>
+        <div class="sub">单位已代扣代缴: <span id="taxSettlePaid" style="font-weight: 600;">¥ 0.00</span></div>
+      </div>
+      <div class="hero-stat-card">
+        <div>
+          <div class="label">全年综合所得预扣税率档</div>
+          <div class="val" id="taxCurrentBracket" style="color: var(--primary);">3%</div>
+        </div>
+        <div class="sub">累计应税所得: <span id="taxCumIncomeVal">¥ 0.00</span></div>
+      </div>
+    </div>
+
+    <!-- 阶梯跳档进度条 -->
+    <div class="card">
+      <div class="card-title">
+        <span>⚡ 个人所得税累计纳税阶梯与“跳档”预警</span>
+        <span id="taxJumpWarning" style="font-size: 12px; color: var(--warning); font-weight: 600;"></span>
+      </div>
+      <div style="background: #e2e8f0; border-radius: 9999px; height: 16px; overflow: hidden; position: relative; margin-bottom: 8px;">
+        <div id="taxProgressBar" style="background: linear-gradient(90deg, #38bdf8 0%, #2563eb 100%); height: 100%; width: 0%; transition: width 0.4s ease;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+        <span>0 (3%)</span>
+        <span>3.6万 (10%)</span>
+        <span>14.4万 (20%)</span>
+        <span>30万 (25%)</span>
+        <span>42万 (30%)</span>
+        <span>66万 (35%)</span>
+        <span>96万+ (45%)</span>
+      </div>
+      <div id="taxBracketDetailNote" style="margin-top: 12px; padding: 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-muted);">
+        正在根据全年纵览大表计算纳税档位...
+      </div>
+    </div>
+
+    <!-- 汇算清缴测算 -->
+    <div class="card">
+      <div class="card-title">
+        <span>📋 汇算清缴补充收入与扣除 (全口径)</span>
+        <button type="button" class="btn btn-outline btn-sm" id="btnSyncFromSalaryRecords">
+          🔄 重新同步全年薪资数据
+        </button>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">全年外部劳务报酬 (减除20%计入)</label>
+          <div class="input-wrapper">
+            <span class="input-addon-left">¥</span>
+            <input type="number" id="taxInLabor" class="input-has-left" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">个人养老金抵税 (最高12,000元/年)</label>
+          <div class="input-wrapper">
+            <span class="input-addon-left">¥</span>
+            <input type="number" id="taxDedPension" class="input-has-left" value="0" placeholder="0~12000">
+          </div>
+        </div>
+      </div>
+      <div id="pensionSavingCard" style="margin-top: 10px; padding: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: var(--radius-sm); font-size: 12px; color: #065f46;">
+        💡 按照当前税率档位，若每年存满 12,000 元个人养老金，当年可直接<strong>退税/少缴个税 ¥ <span id="pensionSaveAmount" style="font-weight: 700; font-size: 14px;">0.00</span></strong>！
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== TAB 4: 五险一金统一配置 ======================== -->
+  <section id="tab-settings" class="tab-content">
+    <div class="card">
+      <div class="card-title">
+        <span>⚙️ 全局统一配置 (社保基数、公积金比例、专项扣除)</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12px; color: var(--text-muted);">快捷城市预设:</span>
+          <select id="cityPresetSelect" style="width: auto; padding: 4px 8px; font-size: 12px;">
+            <option value="national">全国标准预设</option>
+            <option value="beijing">北京标准</option>
+            <option value="shanghai">上海标准</option>
+            <option value="shenzhen">深圳标准</option>
+            <option value="guangzhou">广州标准</option>
+          </select>
+        </div>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+        此处为全年 1~12 月的<strong>统一通用配置</strong>。修改后将一键应用于全年的每个月份，各月在纵览表中仍可自由微调底薪、奖金与加班费。
+      </p>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">统一社保缴费基数 (养老/医疗/失业)</label>
+          <div class="input-wrapper">
+            <span class="input-addon-left">¥</span>
+            <input type="number" id="settingSocialBase" class="input-has-left" value="26000">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label class="form-label" style="margin-bottom: 0;">统一住房公积金缴费基数</label>
+            <button type="button" class="btn btn-outline btn-sm" id="btnSyncSocialToFund" style="padding: 1px 6px; font-size: 11px; color: var(--primary);">
+              🔄 同步社保基数
+            </button>
+          </div>
+          <div class="input-wrapper">
+            <span class="input-addon-left">¥</span>
+            <input type="number" id="settingFundBase" class="input-has-left" value="26000">
+          </div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 6px;">
+        <div class="form-group">
+          <label class="form-label">住房公积金比例 (个人%)</label>
+          <div class="input-wrapper">
+            <input type="number" id="settingFundRate" class="input-has-right" value="7" min="5" max="12">
+            <span class="input-addon-right">%</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">失业保险比例 (个人%)</label>
+          <div class="input-wrapper">
+            <input type="number" id="settingUnemploymentRate" class="input-has-right" value="0.5" step="0.1" min="0" max="2">
+            <span class="input-addon-right">%</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">养老保险比例 (个人%)</label>
+          <div class="input-wrapper">
+            <input type="number" id="settingPensionRate" class="input-has-right" value="8" readonly style="background:#f8fafc;">
+            <span class="input-addon-right">%</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">医疗保险比例 (个人%)</label>
+          <div class="input-wrapper">
+            <input type="number" id="settingMedicalRate" class="input-has-right" value="2" readonly style="background:#f8fafc;">
+            <span class="input-addon-right">%</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">大病医疗互助 (个人固定额)</label>
+          <div class="input-wrapper">
+            <span class="input-addon-left">¥</span>
+            <input type="number" id="settingMedicalExtra" class="input-has-left" value="0">
+          </div>
+        </div>
+      </div>
+
+      <!-- 统一专项附加扣除配置 -->
+      <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <span style="font-size: 14px; font-weight: 700;">七项专项附加扣除 & 个税申报期数设置</span>
+            <span style="font-size: 12px; color: var(--text-muted); margin-left: 8px;">
+              (若单位每月未代扣，请关闭每月扣除开关，次年汇算一并退税)
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <label style="font-size: 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+              <input type="checkbox" id="settingMonthlySpecialEnabled">
+              <span>单位每月发薪时代扣</span>
+            </label>
+            <div style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
+              <span>申报期数:</span>
+              <select id="settingTaxMonthOffset" style="width: auto; padding: 2px 6px; font-size: 12px;">
+                <option value="1">次月申报制 (+1期，8月减除4.5万)</option>
+                <option value="0">标准自然月 (当月申报，8月减除4万)</option>
+              </select>
+            </div>
+            <span style="font-size: 13px; font-weight: 700; color: var(--primary);">
+              每月统扣: ¥ <span id="totalSpecialCalc">0</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="deduction-grid">
+          <div class="deduction-item" id="itemChildEdu">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">子女教育</div>
+              <div style="font-size: 11px; color: var(--text-muted);">2000元/月/孩</div>
+            </div>
+            <input type="checkbox" id="chkChildEdu">
+          </div>
+
+          <div class="deduction-item" id="itemInfantCare">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">3岁以下婴幼儿</div>
+              <div style="font-size: 11px; color: var(--text-muted);">2000元/月/孩</div>
+            </div>
+            <input type="checkbox" id="chkInfantCare">
+          </div>
+
+          <div class="deduction-item active" id="itemRent">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">住房租金 (大城市)</div>
+              <div style="font-size: 11px; color: var(--text-muted);">1500元/月</div>
+            </div>
+            <input type="checkbox" id="chkRent" checked>
+          </div>
+
+          <div class="deduction-item" id="itemLoan">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">住房贷款利息</div>
+              <div style="font-size: 11px; color: var(--text-muted);">1000元/月</div>
+            </div>
+            <input type="checkbox" id="chkLoan">
+          </div>
+
+          <div class="deduction-item" id="itemElderly">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">赡养老人 (独生)</div>
+              <div style="font-size: 11px; color: var(--text-muted);">3000元/月</div>
+            </div>
+            <input type="checkbox" id="chkElderly">
+          </div>
+
+          <div class="deduction-item" id="itemContinueEdu">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">继续教育</div>
+              <div style="font-size: 11px; color: var(--text-muted);">400元/月</div>
+            </div>
+            <input type="checkbox" id="chkContinueEdu">
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="saveSettingsBtn" style="margin-top: 18px;">
+        💾 保存统一配置并重算全年大表
+      </button>
+    </div>
+  </section>
+
+  <!-- ======================== TAB 5: 年终奖测算 ======================== -->
+  <section id="tab-bonus" class="tab-content">
+    <div class="card">
+      <div class="card-title">
+        <span>🎁 年终奖单独计税 vs 合并计税测算</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="form-group">
+            <label class="form-label">年终奖税前金额</label>
+            <div class="input-wrapper">
+              <span class="input-addon-left">¥</span>
+              <input type="number" id="bonusAmount" class="input-has-left" value="50000">
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" id="calcBonusBtn">⚡ 立即测算对比</button>
+        </div>
+        <div id="bonusComparisonResult" style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px;">
+          <div style="font-weight: 700; margin-bottom: 8px;">📊 测算对比结论</div>
+          <div id="bonusPlanATax" style="margin-bottom: 6px;">单独计税：-</div>
+          <div id="bonusPlanBTax" style="margin-bottom: 8px;">合并计税：-</div>
+          <div id="bonusRecommendation" style="padding: 10px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; font-size: 12px; color: #047857;">
+            点击“立即测算对比”获取最优选择。
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== TAB 6: 数据管理与备份 ======================== -->
+  <section id="tab-data" class="tab-content">
+    <div class="card">
+      <div class="card-title">
+        <span>💾 本地数据安全与备份</span>
+      </div>
+      <div class="grid-2">
+        <div style="border: 1px solid var(--border); padding: 16px; border-radius: var(--radius-sm);">
+          <h4 style="font-size: 14px; margin-bottom: 6px;">📤 导出本地数据备份</h4>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">包含全部年份的各月薪资记录、加班记录与统一配置。</p>
+          <button type="button" class="btn btn-primary" id="btnExportJson">⬇️ 导出 JSON 备份文件</button>
+        </div>
+        <div style="border: 1px solid var(--border); padding: 16px; border-radius: var(--radius-sm);">
+          <h4 style="font-size: 14px; margin-bottom: 6px;">📥 恢复备份文件</h4>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">从电脑本地导入之前导出的 JSON 备份。</p>
+          <input type="file" id="importJsonInput" accept=".json" style="display: none;">
+          <button type="button" class="btn btn-outline" id="btnTriggerImport">📂 选择备份文件并恢复</button>
+        </div>
+      </div>
+      <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--danger);">清空数据</div>
+          <div style="font-size: 12px; color: var(--text-muted);">重置所有年份的月度记录与配置</div>
+        </div>
+        <button type="button" class="btn btn-danger-outline" id="btnClearAllData">🗑️ 彻底清空全部本地数据</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 吐司通知框 -->
+<div id="toast">
+  <span id="toastIcon">✨</span>
+  <span id="toastMsg">提示消息</span>
+</div>
+
+<script>
+/**
+ * 个人工资计算器核心逻辑 (全年纵览大表版本)
+ */
+const STORAGE_KEY_YEAR_DATA = 'salary_calc_year_data_v2';
+const STORAGE_KEY_SETTINGS  = 'salary_calc_unified_settings_v2';
+
+// 统一配置默认值
+const DEFAULT_SETTINGS = {
+  socialBase: 26000,
+  fundBase: 26000,
+  pensionRate: 8,
+  medicalRate: 2,
+  medicalExtra: 0,
+  unemploymentRate: 0.5,
+  pensionCompany: 16,
+  medicalCompany: 8.5,
+  unemployCompany: 0.5,
+  injuryRate: 0.4,
+  maternityRate: 0.8,
+  fundRate: 7,
+  monthlySpecialEnabled: false, // 默认单位发薪不代扣专项附加扣除(次年汇算一并退税，月扣除0元，精准匹配6月税1726)
+  taxMonthOffset: 1,           // 次月申报制(+1期)，使得6月累计减除3.5万、7月4万、8月4.5万
+  specialDeductions: {
+    childEdu: false,
+    infantCare: false,
+    rent: true,
+    loan: false,
+    elderly: false,
+    continueEdu: false
+  }
+};
+
+let appSettings = loadSettings();
+let currentYear = '2026';
+let yearSalaryData = loadYearData();
+
+// ======================== 数据持久化 ========================
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch (e) {}
+  return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings(settings) {
+  appSettings = settings;
+  localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+  updateQuickConfigSummary();
+}
+
+function loadYearData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_YEAR_DATA);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return {};
+}
+
+function saveYearData(data) {
+  yearSalaryData = data;
+  localStorage.setItem(STORAGE_KEY_YEAR_DATA, JSON.stringify(data));
+}
+
+// 获取某一年的 1~12 月数据列表（若没有则初始化 12 个自然月）
+function getYearMonths(year) {
+  if (!yearSalaryData[year]) {
+    yearSalaryData[year] = createDefaultMonths(year, 16000);
+    saveYearData(yearSalaryData);
+  }
+  return yearSalaryData[year];
+}
+
+function createDefaultMonths(year, defaultBase = 16000) {
+  const list = [];
+  for (let m = 1; m <= 12; m++) {
+    const monthKey = `${year}-${String(m).padStart(2, '0')}`;
+    list.push({
+      month: monthKey,
+      m: m,
+      baseSalary: defaultBase,
+      overtime: 0,
+      bonus: 0,
+      mealTransport: 0
+    });
+  }
+  return list;
+}
+
+// ======================== 五险一金与专项扣除计算 ========================
+function calculateInsurances(socialBase, fundBase, settings) {
+  const pensionPersonal      = Math.round(socialBase * (settings.pensionRate / 100) * 100) / 100;
+  const medicalPersonal      = Math.round((socialBase * (settings.medicalRate / 100) + (settings.medicalExtra || 0)) * 100) / 100;
+  const unemployRate         = settings.unemploymentRate !== undefined ? Number(settings.unemploymentRate) : 0.5;
+  const unemploymentPersonal = Math.round(socialBase * (unemployRate / 100) * 100) / 100;
+  const fundPersonal         = Math.round(fundBase * (settings.fundRate / 100) * 100) / 100;
+
+  const totalPersonal = Math.round((pensionPersonal + medicalPersonal + unemploymentPersonal + fundPersonal) * 100) / 100;
+
+  const pensionCompany       = Math.round(socialBase * (settings.pensionCompany / 100) * 100) / 100;
+  const medicalCompany       = Math.round(socialBase * (settings.medicalCompany / 100) * 100) / 100;
+  const unemploymentCompany  = Math.round(socialBase * (settings.unemployCompany / 100) * 100) / 100;
+  const injuryCompany        = Math.round(socialBase * (settings.injuryRate / 100) * 100) / 100;
+  const maternityCompany     = Math.round(socialBase * (settings.maternityRate / 100) * 100) / 100;
+  const fundCompany          = Math.round(fundBase * (settings.fundRate / 100) * 100) / 100;
+
+  const totalCompany = Math.round((pensionCompany + medicalCompany + unemploymentCompany + injuryCompany + maternityCompany + fundCompany) * 100) / 100;
+
+  const breakdownText = `个人自付明细：\n• 养老保险(8%): ${formatMoney(pensionPersonal)}\n• 医疗保险(2%): ${formatMoney(medicalPersonal)}${settings.medicalExtra ? ' (含大病¥' + settings.medicalExtra + ')' : ''}\n• 失业保险(0.5%): ${formatMoney(unemploymentPersonal)}\n• 住房公积金(${settings.fundRate}%): ${formatMoney(fundPersonal)}\n------------------------\n合计自付: ${formatMoney(totalPersonal)}`;
+
+  return {
+    personalTotal: totalPersonal,
+    fundPersonal: fundPersonal,
+    companyTotal: totalCompany,
+    pensionPersonal: pensionPersonal,
+    medicalPersonal: medicalPersonal,
+    unemploymentPersonal: unemploymentPersonal,
+    breakdownText: breakdownText
+  };
+}
+
+// 专项附加扣除月度固定额 (若单位每月未代扣则为0，次年汇算清缴退税)
+function getMonthlySpecialDeduction() {
+  if (!appSettings.monthlySpecialEnabled) return 0;
+  let sum = 0;
+  const sp = appSettings.specialDeductions || {};
+  if (sp.childEdu) sum += 2000;
+  if (sp.infantCare) sum += 2000;
+  if (sp.rent) sum += 1500;
+  if (sp.loan) sum += 1000;
+  if (sp.elderly) sum += 3000;
+  if (sp.continueEdu) sum += 400;
+  return sum;
+}
+
+// 7 级累计预扣税率表
+function getTaxRateAndQuickDeduction(cumulativeTaxableIncome) {
+  if (cumulativeTaxableIncome <= 0) return { rate: 0, quickDeduction: 0, label: '0%', class: 'pill-tier-3' };
+  if (cumulativeTaxableIncome <= 36000)   return { rate: 0.03, quickDeduction: 0,      label: '3%',  class: 'pill-tier-3' };
+  if (cumulativeTaxableIncome <= 144000)  return { rate: 0.10, quickDeduction: 2520,   label: '10%', class: 'pill-tier-10' };
+  if (cumulativeTaxableIncome <= 300000)  return { rate: 0.20, quickDeduction: 16920,  label: '20%', class: 'pill-tier-20' };
+  if (cumulativeTaxableIncome <= 420000)  return { rate: 0.25, quickDeduction: 31920,  label: '25%', class: 'pill-tier-25' };
+  if (cumulativeTaxableIncome <= 660000)  return { rate: 0.30, quickDeduction: 52920,  label: '30%', class: 'pill-tier-high' };
+  if (cumulativeTaxableIncome <= 960000)  return { rate: 0.35, quickDeduction: 85920,  label: '35%', class: 'pill-tier-high' };
+  return { rate: 0.45, quickDeduction: 181920, label: '45%', class: 'pill-tier-high' };
+}
+
+function formatMoney(num) {
+  return '¥ ' + (Number(num) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function showToast(msg, icon = '✨') {
+  const toast = document.getElementById('toast');
+  const toastMsg = document.getElementById('toastMsg');
+  const toastIcon = document.getElementById('toastIcon');
+  if (!toast) return;
+  toastMsg.textContent = msg;
+  toastIcon.textContent = icon;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2800);
+}
+
+function updateQuickConfigSummary() {
+  const el = document.getElementById('quickConfigSummary');
+  if (el) {
+    el.textContent = `基数 ${appSettings.socialBase.toLocaleString()} · 公积金 ${appSettings.fundRate}% · 扣除 ¥${getMonthlySpecialDeduction()}`;
+  }
+}
+
+// ======================== 全年 12 个月纵览大表核心渲染与就地更新 ========================
+// 1. 构建表格 DOM 骨架 (仅在初次加载、年份切换、模板载入或强制重置时调用，避免输入时重绘 DOM)
+function buildOverviewTableDOM(forceRebuild = false) {
+  const tbody = document.getElementById('overviewTableBody');
+  if (!tbody) return;
+
+  const months = getYearMonths(currentYear);
+  if (!forceRebuild && tbody.children.length === months.length) {
+    // DOM 结构已存在，直接就地更新数值
+    updateOverviewCalculations(-1);
+    return;
+  }
+
+  const ins = calculateInsurances(appSettings.socialBase, appSettings.fundBase, appSettings);
+  const monthlySpecial = getMonthlySpecialDeduction();
+
+  const html = months.map((row, idx) => {
+    const base = Number(row.baseSalary) || 0;
+    const ot   = Number(row.overtime) || 0;
+    const bon  = Number(row.bonus) || 0;
+    const mt   = Number(row.mealTransport) || 0;
+    const customTaxVal = (row.customTax !== undefined && row.customTax !== '' && row.customTax !== null) ? row.customTax : '';
+
+    return `
+      <tr data-month="${row.month}" data-idx="${idx}">
+        <td style="font-weight: 700; text-align: center;">${row.m} 月</td>
+        <td>
+          <input type="number" class="cell-input" data-field="baseSalary" data-idx="${idx}" value="${base}">
+        </td>
+        <td>
+          <div style="display: inline-flex; align-items: center; gap: 4px;">
+            <input type="number" class="cell-input cell-input-ot" data-field="overtime" data-idx="${idx}" value="${ot}">
+            <button type="button" class="btn btn-outline btn-sm btn-quick-ot" data-month="${row.month}" title="使用加班核算器精确计算该月加班费" style="padding: 2px 5px; font-size: 11px;">
+              ⚡
+            </button>
+          </div>
+        </td>
+        <td>
+          <input type="number" class="cell-input" data-field="bonus" data-idx="${idx}" value="${bon}">
+        </td>
+        <td>
+          <input type="number" class="cell-input" data-field="mealTransport" data-idx="${idx}" value="${mt}">
+        </td>
+        <td class="col-gross" style="font-weight: 600;">¥ 0.00</td>
+        <td class="col-insurance" title="${ins.breakdownText}" style="color: var(--text-muted); cursor: help; text-decoration: underline dotted #cbd5e1;">${formatMoney(ins.personalTotal)}</td>
+        <td class="col-special" style="color: var(--text-muted);">${formatMoney(monthlySpecial)}</td>
+        <td class="col-cum-taxable" style="color: #0369a1;">¥ 0.00</td>
+        <td class="col-tax-rate" style="text-align: center;">
+          <span class="status-pill pill-tier-3">0%</span>
+        </td>
+        <td class="col-tax" style="text-align: right;">
+          <input type="number" class="cell-input cell-input-tax" data-field="customTax" data-idx="${idx}" placeholder="自动计算" value="${customTaxVal}" style="color: var(--danger); font-weight: 700; width: 90px; text-align: right;">
+        </td>
+        <td class="col-net" style="color: var(--success); font-weight: 800; font-size: 14px;">¥ 0.00</td>
+        <td class="col-company" style="color: var(--text-muted); font-size: 12px;">¥ 0.00</td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.innerHTML = html;
+  updateOverviewCalculations(-1);
+}
+
+// 2. 就地更新计算结果 (打字输入时仅更新计算列文本，绝不替换 DOM，彻底保持输入框焦点与光标)
+function updateOverviewCalculations(skipInputIdx = -1) {
+  const tbody = document.getElementById('overviewTableBody');
+  if (!tbody || tbody.children.length !== 12) {
+    buildOverviewTableDOM(true);
+    return;
+  }
+
+  const months = getYearMonths(currentYear);
+  const ins = calculateInsurances(appSettings.socialBase, appSettings.fundBase, appSettings);
+  const monthlySpecial = getMonthlySpecialDeduction();
+
+  let cumTaxableIncome = 0;
+  let cumPaidTax = 0;
+
+  let totalBase = 0;
+  let totalOt = 0;
+  let totalBonus = 0;
+  let totalMealTransport = 0;
+  let totalGross = 0;
+  let totalInsurance = 0;
+  let totalSpecial = 0;
+  let totalTax = 0;
+  let totalNet = 0;
+  let totalCompany = 0;
+  let totalFundPersonal = 0;
+
+  const chartData = [];
+  const rows = tbody.querySelectorAll('tr');
+
+  months.forEach((row, idx) => {
+    const tr = rows[idx];
+    if (!tr) return;
+
+    const base = Number(row.baseSalary) || 0;
+    const ot   = Number(row.overtime) || 0;
+    const bon  = Number(row.bonus) || 0;
+    const mt   = Number(row.mealTransport) || 0;
+
+    // 若非当前正在输入的行，且需要同步输入框显示时才更新 input 属性
+    if (skipInputIdx !== idx) {
+      const inpBase  = tr.querySelector('input[data-field="baseSalary"]');
+      const inpOt    = tr.querySelector('input[data-field="overtime"]');
+      const inpBonus = tr.querySelector('input[data-field="bonus"]');
+      const inpMt    = tr.querySelector('input[data-field="mealTransport"]');
+      const inpTax   = tr.querySelector('input[data-field="customTax"]');
+      if (inpBase  && Number(inpBase.value)  !== base) inpBase.value  = base;
+      if (inpOt    && Number(inpOt.value)    !== ot)   inpOt.value    = ot;
+      if (inpBonus && Number(inpBonus.value) !== bon)  inpBonus.value = bon;
+      if (inpMt    && Number(inpMt.value)    !== mt)   inpMt.value    = mt;
+      if (inpTax && row.customTax !== undefined && row.customTax !== '' && Number(inpTax.value) !== Number(row.customTax)) {
+        inpTax.value = row.customTax;
+      }
+    }
+
+    // 税前应发 = 基本工资 + 加班费 + 奖励 + 餐贴车贴
+    const gross = Math.max(0, base + ot + bon + mt);
+
+    // 累计应税所得
+    const monthTaxable = Math.max(0, gross - 5000 - ins.personalTotal - monthlySpecial);
+    cumTaxableIncome += monthTaxable;
+
+    // 累计税率表匹配
+    const tInfo = getTaxRateAndQuickDeduction(cumTaxableIncome);
+    const cumDueTax = Math.max(0, Math.round((cumTaxableIncome * tInfo.rate - tInfo.quickDeduction) * 100) / 100);
+    const calcMonthTax = Math.max(0, Math.round((cumDueTax - cumPaidTax) * 100) / 100);
+
+    // 若用户输入了实际个税则以实际为准，否则采用自动计算值
+    const hasCustomTax = (row.customTax !== undefined && row.customTax !== '' && row.customTax !== null);
+    const actualTax = hasCustomTax ? Number(row.customTax) : calcMonthTax;
+    cumPaidTax += actualTax;
+
+    const net = Math.max(0, Math.round((gross - ins.personalTotal - actualTax) * 100) / 100);
+    const company = Math.round((gross + ins.companyTotal) * 100) / 100;
+
+    // 累加年度总计
+    totalBase += base;
+    totalOt += ot;
+    totalBonus += bon;
+    totalMealTransport += mt;
+    totalGross += gross;
+    totalInsurance += ins.personalTotal;
+    totalSpecial += monthlySpecial;
+    totalTax += actualTax;
+    totalNet += net;
+    totalCompany += company;
+    totalFundPersonal += ins.fundPersonal;
+
+    chartData.push({ month: row.month, net: net, tax: actualTax });
+
+    // 就地修改计算单元格的文本与样式（DOM 不销毁，焦点不丢失）
+    const cellGross = tr.querySelector('.col-gross');
+    const cellIns   = tr.querySelector('.col-insurance');
+    const cellSpec  = tr.querySelector('.col-special');
+    const cellCum   = tr.querySelector('.col-cum-taxable');
+    const cellRate  = tr.querySelector('.col-tax-rate');
+    const inpTax    = tr.querySelector('input[data-field="customTax"]');
+    const cellNet   = tr.querySelector('.col-net');
+    const cellComp  = tr.querySelector('.col-company');
+
+    if (cellGross) cellGross.textContent = formatMoney(gross);
+    if (cellIns) {
+      cellIns.textContent = formatMoney(ins.personalTotal);
+      cellIns.title = ins.breakdownText;
+    }
+    if (cellSpec)  cellSpec.textContent  = formatMoney(monthlySpecial);
+    if (cellCum)   cellCum.textContent   = formatMoney(cumTaxableIncome);
+    if (cellRate)  cellRate.innerHTML     = `<span class="status-pill ${tInfo.class}">${tInfo.label}</span>`;
+    if (inpTax && !hasCustomTax) {
+      inpTax.placeholder = calcMonthTax.toFixed(2);
+    }
+    if (cellNet)   cellNet.textContent   = formatMoney(net);
+    if (cellComp)  cellComp.textContent  = formatMoney(company);
+  });
+
+  // 更新表格底部的年度总计行
+  const elFootBase          = document.getElementById('footBase');
+  const elFootOt            = document.getElementById('footOt');
+  const elFootBonus         = document.getElementById('footBonus');
+  const elFootMealTransport = document.getElementById('footMealTransport');
+  const elFootGross         = document.getElementById('footGross');
+  const elFootInsurance     = document.getElementById('footInsurance');
+  const elFootSpecial       = document.getElementById('footSpecial');
+  const elFootTax           = document.getElementById('footTax');
+  const elFootNet           = document.getElementById('footNet');
+  const elFootCompany       = document.getElementById('footCompany');
+
+  if (elFootBase)          elFootBase.textContent          = formatMoney(totalBase);
+  if (elFootOt)            elFootOt.textContent            = formatMoney(totalOt);
+  if (elFootBonus)         elFootBonus.textContent         = formatMoney(totalBonus);
+  if (elFootMealTransport) elFootMealTransport.textContent = formatMoney(totalMealTransport);
+  if (elFootGross)         elFootGross.textContent         = formatMoney(totalGross);
+  if (elFootInsurance)     elFootInsurance.textContent     = formatMoney(totalInsurance);
+  if (elFootSpecial)       elFootSpecial.textContent       = formatMoney(totalSpecial);
+  if (elFootTax)           elFootTax.textContent           = formatMoney(totalTax);
+  if (elFootNet)           elFootNet.textContent           = formatMoney(totalNet);
+  if (elFootCompany)       elFootCompany.textContent       = formatMoney(totalCompany);
+
+  // 更新顶部四大核心数据卡片
+  const elStatNet   = document.getElementById('ovStatTotalNet');
+  const elStatAvg   = document.getElementById('ovStatAvgNet');
+  const elStatGross = document.getElementById('ovStatTotalGross');
+  const elStatTax   = document.getElementById('ovStatTotalTax');
+  const elStatIns   = document.getElementById('ovStatTotalInsurance');
+  const elStatFund  = document.getElementById('ovStatTotalFund');
+
+  if (elStatNet)   elStatNet.textContent   = formatMoney(totalNet);
+  if (elStatAvg)   elStatAvg.textContent   = formatMoney(totalNet / 12);
+  if (elStatGross) elStatGross.textContent = formatMoney(totalGross);
+  if (elStatTax)   elStatTax.textContent   = formatMoney(totalTax);
+  if (elStatIns)   elStatIns.textContent   = formatMoney(totalInsurance);
+  if (elStatFund)  elStatFund.textContent  = formatMoney(totalFundPersonal * 2);
+
+  // 渲染走势图
+  renderOverviewChart(chartData);
+
+  // 同步税务系统大看板
+  updateTaxTabDashboard(cumTaxableIncome, totalGross, totalInsurance, totalSpecial, totalTax);
+}
+
+// 统一对外调用接口
+function renderFullYearOverview() {
+  buildOverviewTableDOM(true);
+}
+
+// 走势柱状图渲染
+function renderOverviewChart(chartData) {
+  const container = document.getElementById('chartBars');
+  if (!container) return;
+
+  const maxVal = Math.max(...chartData.map(d => d.net), 10000);
+
+  container.innerHTML = chartData.map(d => {
+    const percent = Math.min(100, Math.round((d.net / maxVal) * 100));
+    const mStr = d.month.split('-')[1] + '月';
+    return `
+      <div class="bar-col">
+        <div class="bar-val">${Math.round(d.net)}</div>
+        <div class="bar-fill" style="height: ${percent}%;"></div>
+        <div class="bar-label">${mStr}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ======================== 税务系统同步更新 ========================
+function updateTaxTabDashboard(cumTaxable, totalGross, totalInsurance, totalSpecial, totalTax) {
+  const tInfo = getTaxRateAndQuickDeduction(cumTaxable);
+  const curBracketEl = document.getElementById('taxCurrentBracket');
+  const cumValEl = document.getElementById('taxCumIncomeVal');
+  const pBar = document.getElementById('taxProgressBar');
+  const warnEl = document.getElementById('taxJumpWarning');
+  const noteEl = document.getElementById('taxBracketDetailNote');
+  const pensionSaveEl = document.getElementById('pensionSaveAmount');
+
+  if (curBracketEl) curBracketEl.textContent = tInfo.label;
+  if (cumValEl) cumValEl.textContent = formatMoney(cumTaxable);
+
+  // 跳档进度条
+  let nextThreshold = 36000;
+  let nextRate = '10%';
+  if (cumTaxable <= 36000)       { nextThreshold = 36000;  nextRate = '10%'; }
+  else if (cumTaxable <= 144000) { nextThreshold = 144000; nextRate = '20%'; }
+  else if (cumTaxable <= 300000) { nextThreshold = 300000; nextRate = '25%'; }
+  else if (cumTaxable <= 420000) { nextThreshold = 420000; nextRate = '30%'; }
+  else if (cumTaxable <= 660000) { nextThreshold = 660000; nextRate = '35%'; }
+  else if (cumTaxable <= 960000) { nextThreshold = 960000; nextRate = '45%'; }
+  else                           { nextThreshold = 960000; nextRate = '最高档'; }
+
+  const barPercent = Math.min(100, Math.max(3, Math.round((cumTaxable / 300000) * 100)));
+  if (pBar) pBar.style.width = `${barPercent}%`;
+
+  if (nextRate !== '最高档') {
+    const diff = Math.max(0, nextThreshold - cumTaxable);
+    if (warnEl) warnEl.textContent = `(距下一档 ${nextRate} 还差 ${formatMoney(diff)})`;
+    if (noteEl) {
+      noteEl.innerHTML = `
+        📌 <strong>税务状态分析</strong>：${currentYear} 全年累计应税所得 <strong>${formatMoney(cumTaxable)}</strong>，当前处于 <strong>${tInfo.label}</strong> 预扣率档位。<br>
+        预计再产生 <strong>${formatMoney(diff)}</strong> 应税所得后将跳档进入 <strong>${nextRate}</strong>，请关注扣税变化。
+      `;
+    }
+  } else {
+    if (warnEl) warnEl.textContent = `(已处于最高税率档位)`;
+    if (noteEl) noteEl.innerHTML = `📌 <strong>税务状态分析</strong>：已处于最高 45% 税阶。`;
+  }
+
+  // 养老金节税预估
+  if (pensionSaveEl) {
+    pensionSaveEl.textContent = (12000 * (tInfo.rate || 0.03)).toFixed(2);
+  }
+
+  // 汇算清缴
+  calculateTaxSettleFullYear(totalGross, totalInsurance, totalSpecial, totalTax);
+}
+
+function calculateTaxSettleFullYear(gross, insurance, special, alreadyPaid) {
+  const inLabor = Number(document.getElementById('taxInLabor').value) || 0;
+  const dedPension = Math.min(12000, Number(document.getElementById('taxDedPension').value) || 0);
+
+  const compIncome = gross + (inLabor * 0.8);
+  const totalDeductions = 60000 + insurance + special + dedPension;
+  const taxable = Math.max(0, compIncome - totalDeductions);
+  const tInfo = getTaxRateAndQuickDeduction(taxable);
+  const dueTax = Math.max(0, Math.round((taxable * tInfo.rate - tInfo.quickDeduction) * 100) / 100);
+
+  const diff = Math.round((alreadyPaid - dueTax) * 100) / 100;
+
+  const resHero   = document.getElementById('taxSettleResult');
+  const dueHero   = document.getElementById('taxSettleTotalDue');
+  const paidHero  = document.getElementById('taxSettlePaid');
+
+  if (dueHero) dueHero.textContent = formatMoney(dueTax);
+  if (paidHero) paidHero.textContent = formatMoney(alreadyPaid);
+
+  if (resHero) {
+    if (diff > 0) {
+      resHero.style.color = '#4ade80';
+      resHero.innerHTML = `🎉 预计应退税款: <strong>${formatMoney(diff)}</strong>`;
+    } else if (diff < 0) {
+      resHero.style.color = '#f87171';
+      resHero.innerHTML = `⚠️ 预计应补税款: <strong>${formatMoney(Math.abs(diff))}</strong>`;
+    } else {
+      resHero.style.color = '#bfdbfe';
+      resHero.innerHTML = `⚖️ 税费平衡，无需补退`;
+    }
+  }
+}
+
+// ======================== 加班费精准计算逻辑 ========================
+let targetOtMonth = '2026-10';
+
+function calculateQuickOvertime() {
+  const d2030 = Number(document.getElementById('otDay2030').value) || 0;
+  const d2130 = Number(document.getElementById('otDay2130').value) || 0;
+  const d2230 = Number(document.getElementById('otDay2230').value) || 0;
+  const d2330 = Number(document.getElementById('otDay2330').value) || 0;
+
+  const w3h   = Number(document.getElementById('otWeekend3h').value) || 0;
+  const w6h   = Number(document.getElementById('otWeekend6h').value) || 0;
+  const wFull = Number(document.getElementById('otWeekendFull').value) || 0;
+
+  const weekdayTotal = d2030 * 36 + d2130 * 54 + d2230 * 72 + d2330 * 90;
+  const weekendTotal = w3h * 25 + w6h * 50 + wFull * 75;
+  const grandTotal = weekdayTotal + weekendTotal;
+
+  document.getElementById('otResTotal').textContent = formatMoney(grandTotal);
+  document.getElementById('otResWeekday').textContent = formatMoney(weekdayTotal);
+  document.getElementById('otResWeekend').textContent = formatMoney(weekendTotal);
+  document.getElementById('otApplyVal').textContent = formatMoney(grandTotal);
+  return grandTotal;
+}
+
+// ======================== 导出与导入 ========================
+function exportFullYearCsv() {
+  const months = getYearMonths(currentYear);
+  const ins = calculateInsurances(appSettings.socialBase, appSettings.fundBase, appSettings);
+  const monthlySpecial = getMonthlySpecialDeduction();
+
+  const headers = ['月份', '基本工资', '加班费', '奖励', '餐贴车贴', '税前总额', '个人五险一金', '专项附加扣除'];
+  const rows = months.map(r => {
+    const gross = Math.max(0, Number(r.baseSalary) + Number(r.overtime) + Number(r.bonus || 0) + Number(r.mealTransport || 0));
+    return [
+      r.month,
+      r.baseSalary,
+      r.overtime,
+      r.bonus || 0,
+      r.mealTransport || 0,
+      gross,
+      ins.personalTotal,
+      monthlySpecial
+    ];
+  });
+
+  const csvContent = '\uFEFF' + [headers, ...rows].map(e => e.join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${currentYear}年度薪资全景纵览台账_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('全年 CSV 导出成功！', '📊');
+}
+
+function exportJsonBackup() {
+  const payload = {
+    version: '2.0',
+    exportTime: new Date().toISOString(),
+    settings: appSettings,
+    yearSalaryData: yearSalaryData
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `salary-calculator-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('备份文件下载完成', '📥');
+}
+
+function importJsonBackup(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.yearSalaryData) {
+        saveYearData(data.yearSalaryData);
+        if (data.settings) saveSettings(data.settings);
+        renderFullYearOverview();
+        showToast('备份恢复成功！', '🎉');
+      } else {
+        showToast('无效的备份文件', '❌');
+      }
+    } catch (err) {
+      showToast('文件解析失败', '❌');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ======================== 事件绑定初始化 ========================
+function initEvents() {
+  // 选项卡切换
+  document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      const tabId = btn.dataset.tab;
+      const targetSec = document.getElementById(tabId);
+      if (targetSec) targetSec.classList.add('active');
+
+      if (tabId === 'tab-overview') {
+        renderFullYearOverview();
+      }
+    });
+  });
+
+  // 表格单元格输入监听 (就地局部更新计算列，彻底杜绝打字时失焦退出)
+  let cellSaveDebounceTimer = null;
+  document.getElementById('overviewTableBody').addEventListener('input', (e) => {
+    if (e.target.classList.contains('cell-input')) {
+      const field = e.target.dataset.field;
+      const idx   = Number(e.target.dataset.idx);
+      const val   = Number(e.target.value) || 0;
+
+      const months = getYearMonths(currentYear);
+      if (months[idx]) {
+        months[idx][field] = val;
+        // 传入正在打字的行索引 idx，保留当前输入框焦点与光标，仅更新相关计算列文本与走势图
+        updateOverviewCalculations(idx);
+
+        clearTimeout(cellSaveDebounceTimer);
+        cellSaveDebounceTimer = setTimeout(() => {
+          saveYearData(yearSalaryData);
+        }, 150);
+      }
+    }
+  });
+
+  // 输入框失去焦点时立即确保持久化
+  document.getElementById('overviewTableBody').addEventListener('change', (e) => {
+    if (e.target.classList.contains('cell-input')) {
+      clearTimeout(cellSaveDebounceTimer);
+      saveYearData(yearSalaryData);
+    }
+  });
+
+  // 表格中点击加班 ⚡ 按钮跳转并指定月份
+  document.getElementById('overviewTableBody').addEventListener('click', (e) => {
+    if (e.target.classList.contains('btn-quick-ot') || e.target.closest('.btn-quick-ot')) {
+      const btn = e.target.classList.contains('btn-quick-ot') ? e.target : e.target.closest('.btn-quick-ot');
+      const monthStr = btn.dataset.month;
+      targetOtMonth = monthStr;
+
+      // 切换到加班计算器 Tab
+      const otTabBtn = document.querySelector('.nav-tab-btn[data-tab="tab-overtime"]');
+      if (otTabBtn) otTabBtn.click();
+
+      const picker = document.getElementById('otMonthPicker');
+      if (picker) picker.value = monthStr;
+      const badge = document.getElementById('otTargetMonthBadge');
+      if (badge) badge.textContent = monthStr;
+
+      calculateQuickOvertime();
+    }
+  });
+
+  // 年份选择
+  document.getElementById('overviewYearSelect').addEventListener('change', (e) => {
+    currentYear = e.target.value;
+    renderFullYearOverview();
+    showToast(`已切换至 ${currentYear} 年度`, '📅');
+  });
+
+  // 一键应用底薪到全年
+  document.getElementById('btnFillAllMonths').addEventListener('click', () => {
+    const val = Number(document.getElementById('quickBaseSalaryInput').value) || 16000;
+    const months = getYearMonths(currentYear);
+    months.forEach(m => m.baseSalary = val);
+    saveYearData(yearSalaryData);
+    renderFullYearOverview();
+    showToast(`已将基准月薪 ¥${val} 填充至全年 12 个月！`, '⚡');
+  });
+
+  // 快捷打开统一配置
+  document.getElementById('btnQuickOpenSettings').addEventListener('click', () => {
+    const setBtn = document.querySelector('.nav-tab-btn[data-tab="tab-settings"]');
+    if (setBtn) setBtn.click();
+  });
+
+  // 保存统一配置
+  document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+    appSettings.socialBase       = Number(document.getElementById('settingSocialBase').value) || 15000;
+    appSettings.fundBase              = Number(document.getElementById('settingFundBase').value) || 26000;
+    appSettings.fundRate              = Number(document.getElementById('settingFundRate').value) || 7;
+    appSettings.unemploymentRate      = Number(document.getElementById('settingUnemploymentRate').value) || 0.5;
+    appSettings.medicalExtra          = Number(document.getElementById('settingMedicalExtra').value) || 0;
+    appSettings.monthlySpecialEnabled = document.getElementById('settingMonthlySpecialEnabled').checked;
+    appSettings.taxMonthOffset        = Number(document.getElementById('settingTaxMonthOffset').value) || 0;
+
+    appSettings.specialDeductions = {
+      childEdu: document.getElementById('chkChildEdu').checked,
+      infantCare: document.getElementById('chkInfantCare').checked,
+      rent: document.getElementById('chkRent').checked,
+      loan: document.getElementById('chkLoan').checked,
+      elderly: document.getElementById('chkElderly').checked,
+      continueEdu: document.getElementById('chkContinueEdu').checked
+    };
+
+    saveSettings(appSettings);
+    renderFullYearOverview();
+    showToast('统一配置已保存，已重算全年12个月！', '⚙️');
+  });
+
+  // 专项附加扣除勾选切换样式
+  ['chkChildEdu', 'chkInfantCare', 'chkRent', 'chkLoan', 'chkElderly', 'chkContinueEdu'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', () => {
+        const p = el.closest('.deduction-item');
+        if (p) {
+          if (el.checked) p.classList.add('active');
+          else p.classList.remove('active');
+        }
+        let sum = 0;
+        if (document.getElementById('chkChildEdu').checked) sum += 2000;
+        if (document.getElementById('chkInfantCare').checked) sum += 2000;
+        if (document.getElementById('chkRent').checked) sum += 1500;
+        if (document.getElementById('chkLoan').checked) sum += 1000;
+        if (document.getElementById('chkElderly').checked) sum += 3000;
+        if (document.getElementById('chkContinueEdu').checked) sum += 400;
+        document.getElementById('totalSpecialCalc').textContent = sum;
+      });
+    }
+  });
+
+  // 城市快捷预设
+  document.getElementById('cityPresetSelect').addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === 'shanghai') {
+      document.getElementById('settingFundRate').value = 7;
+      document.getElementById('settingMedicalExtra').value = 0;
+    } else if (val === 'beijing') {
+      document.getElementById('settingFundRate').value = 12;
+      document.getElementById('settingMedicalExtra').value = 3;
+    } else if (val === 'shenzhen') {
+      document.getElementById('settingFundRate').value = 5;
+      document.getElementById('settingMedicalExtra').value = 0;
+    } else if (val === 'guangzhou') {
+      document.getElementById('settingFundRate').value = 8;
+      document.getElementById('settingMedicalExtra').value = 0;
+    }
+    showToast(`已切换预设: ${e.target.options[e.target.selectedIndex].text}`, '🏙️');
+  });
+
+  // 加班费核算与一键应用
+  document.querySelectorAll('.ot-quick-input').forEach(inp => {
+    inp.addEventListener('input', calculateQuickOvertime);
+  });
+
+  document.getElementById('btnResetQuickOt').addEventListener('click', () => {
+    ['otDay2030', 'otDay2130', 'otDay2230', 'otDay2330', 'otWeekend3h', 'otWeekend6h', 'otWeekendFull'].forEach(id => {
+      document.getElementById(id).value = 0;
+    });
+    calculateQuickOvertime();
+  });
+
+  document.getElementById('otMonthPicker').addEventListener('change', (e) => {
+    targetOtMonth = e.target.value;
+    document.getElementById('otTargetMonthBadge').textContent = targetOtMonth;
+  });
+
+  document.getElementById('btnApplyOvertimeToTargetMonth').addEventListener('click', () => {
+    const fee = calculateQuickOvertime();
+    const months = getYearMonths(currentYear);
+    const target = months.find(m => m.month === targetOtMonth);
+    if (target) {
+      target.overtime = fee;
+      saveYearData(yearSalaryData);
+      renderFullYearOverview();
+      const overviewBtn = document.querySelector('.nav-tab-btn[data-tab="tab-overview"]');
+      if (overviewBtn) overviewBtn.click();
+      showToast(`已将加班费 ${formatMoney(fee)} 填入 ${targetOtMonth}！`, '✨');
+    } else {
+      showToast(`当前年度 (${currentYear}) 未找到 ${targetOtMonth} 记录`, '⚠️');
+    }
+  });
+
+  // 备份与导出
+  document.getElementById('exportCsvBtn').addEventListener('click', exportFullYearCsv);
+  document.getElementById('exportDataBtn').addEventListener('click', exportJsonBackup);
+  document.getElementById('btnExportJson').addEventListener('click', exportJsonBackup);
+
+  const importInput = document.getElementById('importJsonInput');
+  document.getElementById('btnTriggerImport').addEventListener('click', () => importInput.click());
+  importInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      importJsonBackup(e.target.files[0]);
+    }
+  });
+
+  // 清空数据
+  document.getElementById('btnClearAllData').addEventListener('click', () => {
+    if (confirm('警告：确认永久清空所有历史薪资记录吗？')) {
+      localStorage.removeItem(STORAGE_KEY_YEAR_DATA);
+      yearSalaryData = {};
+      renderFullYearOverview();
+      showToast('已重置所有本地数据', '🧹');
+    }
+  });
+
+  // 年终奖对比
+  document.getElementById('calcBonusBtn').addEventListener('click', () => {
+    const bonus = Number(document.getElementById('bonusAmount').value) || 0;
+    if (bonus <= 0) return;
+    const monthlyAvg = bonus / 12;
+    let rateA = 0, quickA = 0;
+    if (monthlyAvg <= 3000)        { rateA = 0.03; quickA = 0; }
+    else if (monthlyAvg <= 12000)  { rateA = 0.10; quickA = 210; }
+    else if (monthlyAvg <= 25000)  { rateA = 0.20; quickA = 1410; }
+    else if (monthlyAvg <= 35000)  { rateA = 0.25; quickA = 2660; }
+    else if (monthlyAvg <= 55000)  { rateA = 0.30; quickA = 4410; }
+    else if (monthlyAvg <= 80000)  { rateA = 0.35; quickA = 7160; }
+    else                           { rateA = 0.45; quickA = 15160; }
+
+    const taxA = Math.max(0, Math.round((bonus * rateA - quickA) * 100) / 100);
+    const netA = bonus - taxA;
+
+    document.getElementById('bonusPlanATax').innerHTML = `单独计税：纳税 <strong style="color:var(--danger);">${formatMoney(taxA)}</strong> (到手 ${formatMoney(netA)})`;
+    document.getElementById('bonusPlanBTax').innerHTML = `合并计税：请结合全年综合所得税阶对比`;
+  });
+}
+
+// 初始化运行
+window.addEventListener('DOMContentLoaded', () => {
+  initEvents();
+  updateQuickConfigSummary();
+
+  // 默认设置回显
+  document.getElementById('settingSocialBase').value = appSettings.socialBase;
+  document.getElementById('settingFundBase').value = appSettings.fundBase;
+  document.getElementById('settingFundRate').value = appSettings.fundRate;
+  document.getElementById('settingUnemploymentRate').value = appSettings.unemploymentRate !== undefined ? appSettings.unemploymentRate : 0.5;
+  document.getElementById('settingMedicalExtra').value = appSettings.medicalExtra;
+  document.getElementById('settingMonthlySpecialEnabled').checked = !!appSettings.monthlySpecialEnabled;
+  document.getElementById('settingTaxMonthOffset').value = appSettings.taxMonthOffset !== undefined ? appSettings.taxMonthOffset : 1;
+
+  // 专项附加扣除回显
+  const sp = appSettings.specialDeductions || {};
+  document.getElementById('chkChildEdu').checked = !!sp.childEdu;
+  document.getElementById('chkInfantCare').checked = !!sp.infantCare;
+  document.getElementById('chkRent').checked = !!sp.rent;
+  document.getElementById('chkLoan').checked = !!sp.loan;
+  document.getElementById('chkElderly').checked = !!sp.elderly;
+  document.getElementById('chkContinueEdu').checked = !!sp.continueEdu;
+
+  let sum = 0;
+  if (sp.childEdu) sum += 2000;
+  if (sp.infantCare) sum += 2000;
+  if (sp.rent) sum += 1500;
+  if (sp.loan) sum += 1000;
+  if (sp.elderly) sum += 3000;
+  if (sp.continueEdu) sum += 400;
+  document.getElementById('totalSpecialCalc').textContent = sum;
+
+  renderFullYearOverview();
+});
+</script>
+
+</body>
+</html>
