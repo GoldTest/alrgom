@@ -1175,7 +1175,10 @@ const GIST_ID_KEY            = 'lumina-gist-id';
 const GIST_SYNC_TIME_KEY     = 'lumina-gist-sync-time';
 const GIST_USER_KEY          = 'lumina-gist-user';
 const GIST_SYNC_HISTORY_KEY  = 'lumina-gist-sync-history';
+const GIST_LAST_VISIT_KEY    = 'lumina-last-page-visit';
+const GIST_LAST_PULL_KEY     = 'lumina-last-auto-pull-time';
 const GIST_FILENAME          = 'lumina-newtab-backup.json';
+const AUTO_SYNC_INTERVAL     = 10 * 60 * 1000; // 超过 10 分钟自动静默拉取云端数据
 
 let deviceAuthPollTimer  = null;
 let autoUploadTimer      = null;
@@ -1274,8 +1277,6 @@ async function performGistPush({ silent = false, isAuto = false } = {}) {
     updateGistUIState();
     if (!silent) {
       showToast('已成功推送到云端！', '☁️');
-    } else if (isAuto) {
-      showToast('标签页已自动同步至云端', '☁️');
     }
   } catch (err) {
     console.error('推送失败:', err);
@@ -1505,8 +1506,30 @@ async function createLuminaGist(payload) {
   return data.id;
 }
 
-// 从指定 Gist 拉取并应用数据
-async function pullFromGistDirect(gistId) {
+// 判断 Token 是否已经过期（或距离过期不足 1 分钟）
+function isTokenExpired() {
+  const expiresStr = localStorage.getItem(GIST_TOKEN_EXPIRES_KEY);
+  if (!expiresStr) return false;
+  const expiresAt = Number(expiresStr);
+  if (isNaN(expiresAt)) return false;
+  return Date.now() >= (expiresAt - 60 * 1000);
+}
+
+// 确保在同步前获取有效 Token：若已过期则立即使用 refresh_token 刷新
+async function ensureValidTokenForSync() {
+  const token = localStorage.getItem(GIST_TOKEN_KEY) || '';
+  const refreshToken = localStorage.getItem(GIST_REFRESH_TOKEN_KEY) || '';
+  if (!token) return '';
+
+  if (isTokenExpired() && refreshToken) {
+    const refreshed = await refreshGistToken();
+    if (refreshed) return refreshed;
+  }
+  return token;
+}
+
+// 从指定 Gist 拉取并应用数据（支持 silent 静默无感模式）
+async function pullFromGistDirect(gistId, { silent = false } = {}) {
   const res = await fetchGitHubApi(`https://api.github.com/gists/${gistId}`);
   if (res.status === 401) throw new Error('Token 无效或已过期，请重新登录');
   if (!res.ok) throw new Error(`拉取 Gist 失败 (${res.status})`);
@@ -1520,6 +1543,17 @@ async function pullFromGistDirect(gistId) {
   const cloudPayload = JSON.parse(fileObj.content);
   if (!cloudPayload || !Array.isArray(cloudPayload.shortcuts)) {
     throw new Error('云端备份数据损坏');
+  }
+
+  // 静默模式下对比云端与本地时间戳：若云端未发生更新，无感退出避免不必要的重绘
+  const localSyncTime = localStorage.getItem(GIST_SYNC_TIME_KEY) || '';
+  const cloudSyncTime = cloudPayload.updatedAt || '';
+  if (silent && localSyncTime && cloudSyncTime) {
+    const localMs = new Date(localSyncTime).getTime();
+    const cloudMs = new Date(cloudSyncTime).getTime();
+    if (!isNaN(localMs) && !isNaN(cloudMs) && cloudMs <= localMs) {
+      return cloudSyncTime;
+    }
   }
 
   // 1. 应用标签页快捷方式（不触发反向自动同步）
@@ -1539,6 +1573,7 @@ async function pullFromGistDirect(gistId) {
 
   const syncTime = cloudPayload.updatedAt || new Date().toISOString();
   localStorage.setItem(GIST_SYNC_TIME_KEY, syncTime);
+  updateGistUIState();
   return syncTime;
 }
 
@@ -1847,6 +1882,69 @@ function initGistSync() {
       }
     });
   }
+
+  // 页面进入或切回前台时，检测是否超过 10 分钟并执行无感同步
+  async function checkAndPerformAutoPull() {
+    const token = localStorage.getItem(GIST_TOKEN_KEY);
+    if (!token) return; // 未登录 GitHub 直接跳过
+
+    const now = Date.now();
+    const lastVisitStr = localStorage.getItem(GIST_LAST_VISIT_KEY);
+    const lastPullStr  = localStorage.getItem(GIST_LAST_PULL_KEY);
+
+    const lastVisit = lastVisitStr ? Number(lastVisitStr) : 0;
+    const lastPull  = lastPullStr ? Number(lastPullStr) : 0;
+
+    // 判断是否满足 10 分钟无感拉取条件：
+    // 1. 距离上次离开/进入页面超过 10 分钟（如重新启动浏览器、长期未打开新标签页）
+    // 2. 距离上次自动拉取已超过 10 分钟
+    // 3. 首次使用记录
+    const isVisitOver10Min = !lastVisit || (now - lastVisit) >= AUTO_SYNC_INTERVAL;
+    const isPullOver10Min  = !lastPull  || (now - lastPull) >= AUTO_SYNC_INTERVAL;
+
+    // 记录本次活跃时间
+    localStorage.setItem(GIST_LAST_VISIT_KEY, String(now));
+
+    if (isVisitOver10Min || isPullOver10Min) {
+      localStorage.setItem(GIST_LAST_PULL_KEY, String(now));
+
+      try {
+        // 1. 检查 Token：若过期则立即尝试用 refresh_token 刷新
+        const validToken = await ensureValidTokenForSync();
+        if (!validToken) return;
+
+        // 2. 获取云端 Gist ID
+        let gistId = localStorage.getItem(GIST_ID_KEY) || '';
+        if (!gistId) {
+          gistId = await findExistingLuminaGist();
+          if (!gistId) return;
+          localStorage.setItem(GIST_ID_KEY, gistId);
+        }
+
+        // 3. 执行静默无感拉取（比对时间戳，有变化则更新并重绘，全程零弹窗）
+        await pullFromGistDirect(gistId, { silent: true });
+      } catch (err) {
+        console.warn('无感云端拉取跳过或失败:', err);
+      }
+    }
+  }
+
+  // 1. 每次打开新标签页进入页面时立即检查
+  checkAndPerformAutoPull();
+
+  // 2. 标签页从后台切回前台时检查（应对浏览器长时间打开未关的情况）
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      checkAndPerformAutoPull();
+    } else {
+      localStorage.setItem(GIST_LAST_VISIT_KEY, String(Date.now()));
+    }
+  });
+
+  // 3. 页面关闭/卸载前更新离开时间
+  window.addEventListener('pagehide', () => {
+    localStorage.setItem(GIST_LAST_VISIT_KEY, String(Date.now()));
+  });
 }
 
 initGistSync();
